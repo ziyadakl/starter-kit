@@ -14,8 +14,8 @@ def load(name):
 
 def fake_gh(calls=None):
     data = {
-        "repos/example/repo/actions/runs/1/jobs": load("jobs_1"),
-        "repos/example/repo/actions/runs/2/jobs": load("jobs_2"),
+        "repos/example/repo/actions/runs/1/jobs?per_page=100": load("jobs_1"),
+        "repos/example/repo/actions/runs/2/jobs?per_page=100": load("jobs_2"),
     }
 
     def gh(path):
@@ -57,7 +57,37 @@ class TimingsTest(unittest.TestCase):
         calls = []
         timings.collect("example/repo", 1, gh=fake_gh(calls))
         self.assertIn("per_page=1", calls[0])
-        self.assertNotIn("repos/example/repo/actions/runs/2/jobs", calls)
+        self.assertFalse(any("/runs/2/jobs" in c for c in calls))
+
+    def test_jobs_are_requested_100_per_page(self):
+        calls = []
+        timings.collect("example/repo", 1, gh=fake_gh(calls))
+        self.assertIn("repos/example/repo/actions/runs/1/jobs?per_page=100", calls)
+
+    def test_dependency_install_steps_count_as_setup(self):
+        def step(name, a, b):
+            return {
+                "name": name,
+                "started_at": f"2025-01-01T10:00:{a:02d}Z",
+                "completed_at": f"2025-01-01T10:00:{b:02d}Z",
+            }
+
+        for install in ("Run pnpm install", "Run npm ci", "Run uv sync --locked"):
+            job = {
+                "name": "x",
+                "conclusion": "success",
+                "created_at": "2025-01-01T10:00:00Z",
+                "started_at": "2025-01-01T10:00:00Z",
+                "completed_at": "2025-01-01T10:00:50Z",
+                "steps": [
+                    step("Set up job", 0, 2),
+                    step("Run actions/checkout@v4", 2, 10),
+                    step(install, 10, 30),
+                    step("Run tests", 30, 50),
+                ],
+            }
+            _, setup, run = timings._split(job)
+            self.assertEqual((setup, run), (30, 20), install)
 
     def test_no_runs(self):
         out = timings.report("example/repo", 5, gh=lambda p: {"workflow_runs": []})
@@ -78,7 +108,7 @@ class TimingsTest(unittest.TestCase):
         gh = lambda p: (
             {"workflow_runs": [{"id": 1}]}
             if "page=1" in p
-            else (jobs if p.endswith("/jobs") else {"workflow_runs": []})
+            else (jobs if "/jobs" in p else {"workflow_runs": []})
         )
         self.assertEqual(timings.collect("example/repo", 5, gh=gh), {})
 
@@ -98,7 +128,7 @@ class TimingsTest(unittest.TestCase):
         gh = lambda p: (
             {"workflow_runs": [{"id": 1}]}
             if "page=1" in p
-            else (jobs if p.endswith("/jobs") else {"workflow_runs": []})
+            else (jobs if "/jobs" in p else {"workflow_runs": []})
         )
         self.assertEqual(timings.collect("example/repo", 5, gh=gh), {})
 

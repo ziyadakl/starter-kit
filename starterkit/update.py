@@ -2,10 +2,18 @@
 
 import json
 import re
-import subprocess
 from pathlib import Path
 
-from starterkit.apply import RECORD, KitError, collect, insert_ci_steps, sha256
+from starterkit.apply import (
+    RECORD,
+    KitError,
+    collect,
+    insert_ci_steps,
+    install_hooks_path,
+    sha256,
+    write_file,
+    write_record,
+)
 
 
 def parse_version(text):
@@ -60,7 +68,7 @@ def run(kit_root: Path, layers_dir: Path, target: Path, out=print):
                 else:
                     conflicts.append(rel)
                 continue
-            _write(dest, data, exec_bits)
+            write_file(dest, data, exec_bits)
             hashes[rel] = new_hash
             added.append(rel)
             continue
@@ -72,7 +80,7 @@ def run(kit_root: Path, layers_dir: Path, target: Path, out=print):
         if current == new_hash:
             hashes[rel] = new_hash
         elif current == old[rel]:
-            _write(dest, data, exec_bits)
+            write_file(dest, data, exec_bits)
             hashes[rel] = new_hash
             updated.append(rel)
         else:
@@ -84,10 +92,8 @@ def run(kit_root: Path, layers_dir: Path, target: Path, out=print):
 
     record["kit_version"] = version
     record["files"] = hashes
-    rec_path.write_text(json.dumps(record, indent=2, sort_keys=True) + "\n")
-    subprocess.run(
-        ["git", "-C", str(target), "config", "core.hooksPath", ".githooks"], check=True
-    )
+    write_record(target, record)
+    install_hooks_path(target, out)
 
     _report(out, "Updated", updated)
     _report(out, "Added (new in the kit)", added)
@@ -108,12 +114,6 @@ def run(kit_root: Path, layers_dir: Path, target: Path, out=print):
     )
     if not (updated or added or edited or conflicts or deleted or removed or entries):
         out(f"Already up to date at {version}.")
-
-
-def _write(dest: Path, data: bytes, exec_bits):
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    dest.write_bytes(data)
-    dest.chmod(0o755 if exec_bits else 0o644)
 
 
 def _report(out, title, items):

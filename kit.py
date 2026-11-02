@@ -26,6 +26,11 @@ def main(argv=None):
     p.add_argument(
         "--layers-dir", type=Path, default=KIT_ROOT / "layers", help=argparse.SUPPRESS
     )
+    p.add_argument(
+        "--force",
+        action="store_true",
+        help="overwrite existing files that differ from the kit's",
+    )
     p.add_argument("target", type=Path, help="project directory (a git repository)")
 
     p = sub.add_parser(
@@ -49,7 +54,9 @@ def main(argv=None):
     args = parser.parse_args(argv)
     try:
         if args.command == "apply":
-            apply_cmd.run(KIT_ROOT, args.layers_dir, args.layer, args.target)
+            apply_cmd.run(
+                KIT_ROOT, args.layers_dir, args.layer, args.target, force=args.force
+            )
         elif args.command == "update":
             update_cmd.run(
                 args.kit_root, args.layers_dir or args.kit_root / "layers", args.target

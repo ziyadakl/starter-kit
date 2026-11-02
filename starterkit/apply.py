@@ -81,26 +81,64 @@ def insert_ci_steps(layers_dir: Path, layers, out):
     out[rel] = ("".join(result).encode(), mode)
 
 
-def run(kit_root: Path, layers_dir: Path, names, target: Path):
+def write_file(dest: Path, data: bytes, exec_bits):
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    dest.write_bytes(data)
+    dest.chmod(0o755 if exec_bits else 0o644)
+
+
+def write_record(target: Path, record):
+    (target / RECORD).write_text(json.dumps(record, indent=2, sort_keys=True) + "\n")
+
+
+def install_hooks_path(target: Path, out=print):
+    """Point core.hooksPath at .githooks unless the project already uses another path."""
+    r = subprocess.run(
+        ["git", "-C", str(target), "config", "--get", "core.hooksPath"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    current = r.stdout.strip()
+    if current and current != ".githooks":
+        out(
+            f"note: core.hooksPath is already set to {current!r}, so it was left alone; "
+            "call .githooks/pre-push from your own hook path to run the check before a push"
+        )
+        return
+    subprocess.run(
+        ["git", "-C", str(target), "config", "core.hooksPath", ".githooks"], check=True
+    )
+
+
+def run(kit_root: Path, layers_dir: Path, names, target: Path, force=False, out=print):
     target = Path(target)
     if not (target / ".git").exists():
         raise KitError(f"{target} is not a git repository (run git init first)")
     layers = resolve_layers(layers_dir, names)
-    out = collect(layers_dir, layers)
-    insert_ci_steps(layers_dir, layers, out)
+    out_files = collect(layers_dir, layers)
+    insert_ci_steps(layers_dir, layers, out_files)
+
+    if not force:
+        differing = [
+            rel
+            for rel, (data, _) in sorted(out_files.items())
+            if (target / rel).is_file() and (target / rel).read_bytes() != data
+        ]
+        if differing:
+            raise KitError(
+                "these files already exist with different content (nothing was written; "
+                "use --force to overwrite them):\n  " + "\n  ".join(differing)
+            )
 
     hashes = {}
-    for rel in sorted(out):
-        data, exec_bits = out[rel]
-        dest = target / rel
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        dest.write_bytes(data)
-        dest.chmod(0o755 if exec_bits else 0o644)
+    for rel in sorted(out_files):
+        data, exec_bits = out_files[rel]
+        write_file(target / rel, data, exec_bits)
         hashes[rel] = sha256(data)
 
     version = (kit_root / "VERSION").read_text().strip()
-    record = {"kit_version": version, "layers": layers, "files": hashes}
-    (target / RECORD).write_text(json.dumps(record, indent=2, sort_keys=True) + "\n")
-    subprocess.run(
-        ["git", "-C", str(target), "config", "core.hooksPath", ".githooks"], check=True
+    write_record(
+        target, {"kit_version": version, "layers": layers, "files": hashes}
     )
+    install_hooks_path(target, out)

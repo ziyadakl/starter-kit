@@ -13,7 +13,10 @@ from datetime import datetime
 MAX_PAGE = 100
 SETUP_STEP = re.compile(
     r"^(set up job|run actions/(checkout|cache|setup-\w+)|run \S*/?(setup|install|cache|restore)\S*|"
-    r"(set up|setup|install|restore|cache|checkout|initialize)\b.*)",
+    r"(set up|setup|install|restore|cache|checkout|initialize)\b.*|"
+    r"(run )?(pnpm|npm|yarn|bun) (install|i|ci)\b.*|"
+    r"(run )?uv (sync|pip install)\b.*|"
+    r"(run )?(pip|poetry|pipenv|bundle) install\b.*)",
     re.IGNORECASE,
 )
 
@@ -74,7 +77,7 @@ def collect(repo, runs, gh=gh_api):
     """Return {job name: {"count": n, "queue"|"setup"|"run": {"median", "total"}}}."""
     samples = {}
     for run in _list_runs(repo, runs, gh):
-        for job in gh(f"repos/{repo}/actions/runs/{run['id']}/jobs").get("jobs", []):
+        for job in gh(f"repos/{repo}/actions/runs/{run['id']}/jobs?per_page={MAX_PAGE}").get("jobs", []):
             parts = _split(job)
             if parts:
                 samples.setdefault(job["name"], []).append(parts)
