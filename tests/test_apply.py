@@ -47,6 +47,25 @@ class TestBaseLayer(ApplyBase):
         self.assertNotEqual(c.returncode, 0)
         self.assertNotIn("SECOND-RAN", c.stdout)
 
+    def test_bytecode_in_a_layer_is_not_copied(self):
+        layers = Path(self.tmp.name) / "layers"
+        make_layers(
+            layers,
+            {
+                "base": {
+                    "files/keep.txt": "k\n",
+                    "files/hooks/__pycache__/x.cpython-314.pyc": "junk",
+                    "files/hooks/y.pyc": "junk",
+                }
+            },
+        )
+        r = run_kit("apply", "--layers-dir", layers, self.project)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertTrue((self.project / "keep.txt").exists())
+        self.assertFalse((self.project / "hooks/__pycache__").exists())
+        self.assertFalse((self.project / "hooks/y.pyc").exists())
+        self.assertNotIn("pyc", (self.project / ".starter-kit.json").read_text())
+
     def test_apply_sets_hooks_path(self):
         run_kit("apply", self.project)
         self.assertEqual(git_config(self.project, "core.hooksPath"), ".githooks")

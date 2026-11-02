@@ -22,6 +22,7 @@ import sys
 from fnmatch import fnmatchcase
 from pathlib import Path
 
+sys.dont_write_bytecode = True  # no .pyc beside the hooks in a project
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from shell_words import all_commands, program  # noqa: E402
 
@@ -48,7 +49,9 @@ REASON = (
     "To see which settings exist: `cut -d= -f1 .env`. To see which are filled: "
     """`awk -F= '{print $1, (length($2)>0?"filled":"EMPTY")}' .env`. """
     "Code loads .env itself; never read it, source it, or copy it. To add a setting, add its name "
-    "to .env.example and ask the owner to fill in .env by hand."
+    "to .env.example and ask the owner to fill in .env by hand. "
+    "To search a folder that holds one: narrow the search so it skips .env (Grep: a `glob` such as `*.py` or a `type`; "
+    "grep: `--exclude='.env*'`; rg: `-g '!.env*'`), or list file names only (`grep -l`)."
 )
 
 
@@ -142,19 +145,38 @@ def flag_values(args: list[str], *flags: str) -> list[str]:
     return values
 
 
-def reaches_folder_with_env(paths: list[str], cwd: str) -> bool:
-    """A recursive search over these paths (none means `.`) would walk into a folder holding `.env`: the checkout
-    folder or one above it, or any folder with a `.env` file in it."""
-    here = Path(cwd).resolve()
-    for path in paths or ["."]:
-        folder = (here / os.path.expanduser(path)).resolve()
-        if folder == here or folder in here.parents:
+# Folders a search never needs to be stopped for: dependencies, caches and version-control internals.
+SKIP_DIRS = {
+    ".git", "node_modules", ".venv", "venv", "__pycache__", ".tox", ".mypy_cache", ".ruff_cache", ".pytest_cache",
+}  # fmt: skip
+WALK_DEPTH = 8
+WALK_LIMIT = 20000  # files and folders looked at per search; KIT_ENV_WALK_LIMIT overrides (for tests)
+
+
+def holds_env(folder: Path) -> bool:
+    """A real `.env` file (not a template) sits in this folder or below it. Bounded: past the depth or entry cap the
+    answer is True, because a recursive search that cannot be checked cannot be shown to be safe."""
+    limit = int(os.environ.get("KIT_ENV_WALK_LIMIT") or WALK_LIMIT)
+    seen = 0
+    base_depth = len(folder.parts)
+    for root, dirs, files in os.walk(folder):
+        seen += len(dirs) + len(files)
+        if seen > limit or len(Path(root).parts) - base_depth >= WALK_DEPTH:
             return True
-        if folder.is_dir() and any(
-            is_env(child.name) for child in folder.glob(".env*")
-        ):
+        if any(is_env(name) for name in files):
             return True
+        dirs[:] = [d for d in dirs if d not in SKIP_DIRS]
     return False
+
+
+def reaches_folder_with_env(paths: list[str], cwd: str) -> bool:
+    """A recursive search over these paths (none means `.`) would walk into a `.env` file anywhere below them."""
+    here = Path(cwd).resolve()
+    return any(
+        (folder := (here / os.path.expanduser(path)).resolve()).is_dir()
+        and holds_env(folder)
+        for path in paths or ["."]
+    )
 
 
 def searches_env_recursively(name: str, args: list[str], cwd: str) -> bool:

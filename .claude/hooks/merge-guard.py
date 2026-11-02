@@ -20,12 +20,14 @@ safe). Any other crash exits 0: a broken guard must not stop all tool use.
 from __future__ import annotations
 
 import json
+import os
 import re
 import subprocess
 import sys
 from pathlib import Path
 from typing import NamedTuple, NoReturn
 
+sys.dont_write_bytecode = True  # no .pyc beside the hooks in a project
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from shell_words import all_commands, program  # noqa: E402
 
@@ -45,6 +47,11 @@ REPO_FLAGS = {"--repo", "-R"}
 # `gh api` endpoint that merges a pull request: repos/<owner>/<repo>/pulls/<number>/merge
 API_MERGE = re.compile(r"(?:^|/)repos/([^/]+)/([^/]+)/pulls/(\d+)/merge/?$")
 PASSING_CONCLUSIONS = {"SUCCESS", "NEUTRAL", "SKIPPED"}
+GH_TIMEOUT = 20  # seconds per gh or git call; KIT_GH_TIMEOUT overrides (for tests)
+
+
+def gh_timeout() -> float:
+    return float(os.environ.get("KIT_GH_TIMEOUT") or GH_TIMEOUT)
 
 
 class MergeRequest(NamedTuple):
@@ -120,7 +127,16 @@ def pull_request(merge: MergeRequest, cwd: str) -> dict:
     gh_args += ["--json", "number,headRefOid,statusCheckRollup"]
     try:
         result = subprocess.run(
-            ["gh", *gh_args], capture_output=True, text=True, cwd=cwd
+            ["gh", *gh_args],
+            capture_output=True,
+            text=True,
+            cwd=cwd,
+            timeout=gh_timeout(),
+        )
+    except subprocess.TimeoutExpired:
+        block(
+            f"`gh {' '.join(gh_args)}` timed out after {gh_timeout():g}s, so the checks cannot be read. "
+            "Retry, or merge by hand."
         )
     except OSError as error:
         block(
@@ -149,6 +165,7 @@ def stamps_folder(cwd: str) -> Path | None:
         capture_output=True,
         text=True,
         cwd=cwd,
+        timeout=gh_timeout(),
     )
     if result.returncode != 0:
         return None

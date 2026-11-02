@@ -2,10 +2,10 @@
   "files": {
     ".claude/hooks/block-secrets.sh": "9f5b186ddd3b0d07d0a842442f844c79d3aac13f30021fd350a264e459bf8a00",
     ".claude/hooks/config-guard.sh": "bcc95da9c99a8e78c53234001215e871c9ddb22710c2d7208ac416e8cd8fa606",
-    ".claude/hooks/env-guard.py": "cbfa8eda45ab5c4ae09fcf1faccec88527110cad54a016644fcb42baf2c43945",
+    ".claude/hooks/env-guard.py": "be5282ddfa2c7eb3379844e4568959881672530a62fa72ac6f4a31f25ee5bd56",
     ".claude/hooks/install-hooks-path.sh": "11f966d1f3897be642a02938f01a672329776597a455f8d9cfabbcddb3d376a9",
     ".claude/hooks/lib.sh": "50ec661f51f5955cb7adc5a61a51d6cfc23536e6e740ff5af9e989f3e8b41410",
-    ".claude/hooks/merge-guard.py": "7d605f104256e64abb80dc225aa6468430b783038678376d741ec0fba430f50f",
+    ".claude/hooks/merge-guard.py": "d6ca8a2b3ab43efac533d198dfe6e474a729b275bc38af83dd8b6d16eddd71b0",
     ".claude/hooks/shell_words.py": "a0afb5c94ead524c4487a79b69e5dd8e41c1bfd5b4cb3079ac479845d51ad58b",
     ".claude/protect.d/base.txt": "01fe0aef80a2530412c68a898818fd79f98f13283445ec9fb871b491a0d49b2c",
     ".claude/protect.d/python.txt": "d573431dd9cc5e0c0b703c7478430bef6c2ffa9793257f24466d16527ddf86ed",

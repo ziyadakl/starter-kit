@@ -5,6 +5,7 @@ import os
 import shutil
 import stat
 import subprocess
+import time
 import unittest
 from pathlib import Path
 
@@ -145,8 +146,10 @@ class TestSessionStatus(Applied):
 class TestEnvGuard(Applied):
     hook = ".claude/hooks/env-guard.py"
 
-    def verdict(self, tool, **tool_input):
-        return self.run_hook(self.hook, payload(tool, self.project, **tool_input))
+    def verdict(self, tool, env_extra=None, **tool_input):
+        return self.run_hook(
+            self.hook, payload(tool, self.project, **tool_input), env_extra=env_extra
+        )
 
     def test_reading_env_files_is_blocked(self):
         for path in (".env", "/p/.env", ".env.local", ".env.production"):
@@ -199,6 +202,63 @@ class TestEnvGuard(Applied):
         (self.project / ".env").write_text("KEY=1\n")
         self.assertEqual(self.verdict("Bash", command="grep -r KEY .").returncode, 2)
         self.assertEqual(self.verdict("Bash", command="grep -rl KEY .").returncode, 0)
+
+    def test_content_search_in_a_project_without_env_is_allowed(self):
+        (self.project / "app.py").write_text("x = 1\n")
+        r = self.verdict("Grep", pattern="x", output_mode="content")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        for cmd in ("grep -rn x .", "rg --hidden x", "grep -rn x ."):
+            self.assertEqual(self.verdict("Bash", command=cmd).returncode, 0, cmd)
+
+    def test_nested_env_is_found_by_recursive_searches(self):
+        web = self.project / "apps/web"
+        web.mkdir(parents=True)
+        (web / ".env").write_text("SECRET=1\n")
+        for cmd in (
+            "grep -rn SECRET apps",
+            "rg --hidden SECRET apps",
+            "grep -rn SECRET .",
+        ):
+            r = self.verdict("Bash", command=cmd)
+            self.assertEqual(r.returncode, 2, cmd)
+        r = self.verdict("Grep", pattern="SECRET", path="apps", output_mode="content")
+        self.assertEqual(r.returncode, 2)
+        self.assertIn("--exclude", r.stderr)
+
+    def test_nested_env_example_alone_does_not_block(self):
+        web = self.project / "apps/web"
+        web.mkdir(parents=True)
+        (web / ".env.example").write_text("SECRET=\n")
+        r = self.verdict("Bash", command="grep -rn SECRET apps")
+        self.assertEqual(r.returncode, 0, r.stderr)
+
+    def test_searches_that_leave_env_out_are_allowed(self):
+        (self.project / ".env").write_text("KEY=1\n")
+        for cmd in ("grep -rn x --exclude='.env*' .", "rg --hidden -g '!.env*' x ."):
+            self.assertEqual(self.verdict("Bash", command=cmd).returncode, 0, cmd)
+        r = self.verdict("Grep", pattern="K", glob="*.py", output_mode="content")
+        self.assertEqual(r.returncode, 0, r.stderr)
+
+    def test_env_deep_in_the_tree_is_found_and_heavy_folders_are_skipped(self):
+        deep = self.project / "a/b/c/d"
+        deep.mkdir(parents=True)
+        (deep / ".env").write_text("K=1\n")
+        self.assertEqual(self.verdict("Bash", command="grep -rn K .").returncode, 2)
+        (deep / ".env").unlink()
+        nm = self.project / "node_modules/pkg"
+        nm.mkdir(parents=True)
+        (nm / ".env").write_text("K=1\n")
+        self.assertEqual(self.verdict("Bash", command="grep -rn K .").returncode, 0)
+
+    def test_search_too_big_to_check_is_blocked(self):
+        big = self.project / "big"
+        big.mkdir()
+        for i in range(30):
+            (big / f"d{i}").mkdir()
+        r = self.verdict(
+            "Bash", command="grep -rn x big", env_extra={"KIT_ENV_WALK_LIMIT": "10"}
+        )
+        self.assertEqual(r.returncode, 2)
 
     def test_fails_open_on_garbage_input(self):
         for raw in ("not json", '{"tool_input": "oops"}', "[]", ""):
@@ -254,6 +314,19 @@ class TestMergeGuard(Applied):
             r = self.merge()
             self.assertEqual(r.returncode, 2, rollup)
             self.assertIn("BLOCKED", r.stderr)
+
+    def test_a_gh_that_hangs_blocks_the_merge(self):
+        write_exe(self.bin / "gh", "#!/bin/sh\nsleep 5\n")
+        start = time.monotonic()
+        r = self.run_hook(
+            self.hook,
+            payload("Bash", self.project, command="gh pr merge 7"),
+            env_extra={"KIT_GH_TIMEOUT": "0.5"},
+            path=self.path,
+        )
+        self.assertEqual(r.returncode, 2, r.stderr)
+        self.assertIn("timed out", r.stderr)
+        self.assertLess(time.monotonic() - start, 4)
 
     def test_every_way_to_name_a_merge_is_covered(self):
         self.fake_gh([{"status": "COMPLETED", "conclusion": "FAILURE", "name": "c"}])

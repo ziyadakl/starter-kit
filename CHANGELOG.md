@@ -7,6 +7,7 @@
 - Merge guard (`merge-guard.py`, on Bash): refuses a pull request merge (the gh merge command or the merge API call) unless every check on the PR's head commit passed. Where `<git common dir>/review-stamps/` exists, the head commit must also be stamped there; repos without that folder are never asked for a stamp. `scripts/check.sh` stays the local CI; there is no separate script.
 - Config guard (`config-guard.sh`, on Edit, Write, MultiEdit and NotebookEdit): refuses edits to lint, format and scan configuration with "Fix the code, don't weaken the config." Each layer ships its own list in `.claude/protect.d/<layer>.txt` (base: `.gitleaks.toml`; python: `ruff.toml`, `.ruff.toml`, `pyrightconfig.json`; shell: `.shellcheckrc`). The owner overrides by starting Claude with `ALLOW_CONFIG_EDIT=1`, or by editing by hand. `pyproject.toml` is not covered.
 - A project whose `.claude/settings.json` has its own edits keeps them; `kit.py update` reports the file as left alone, and the new hook entries have to be copied in by hand.
+- Review fixes: the `.env` guard now looks for a real `.env` anywhere under the searched folder (bounded walk that skips `.git`, `node_modules`, `.venv` and similar; a search too big to check is refused) and no longer blocks searches in projects that have no `.env`; its refusal says how to narrow the search. `apply` skips `__pycache__` and `.pyc`, and the Python hooks no longer write bytecode. The merge guard gives each gh call 20 seconds and refuses the merge on a timeout.
 
 ## 0.1.0
 
