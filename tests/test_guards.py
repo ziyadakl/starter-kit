@@ -250,6 +250,16 @@ class TestEnvGuard(Applied):
         (nm / ".env").write_text("K=1\n")
         self.assertEqual(self.verdict("Bash", command="grep -rn K .").returncode, 0)
 
+    def test_deep_source_tree_without_env_is_allowed(self):
+        deep = self.project / "src"
+        for part in "com example app service impl internal util core more".split():
+            deep = deep / part
+        deep.mkdir(parents=True)
+        (deep / "Main.java").write_text("class Main {}\n")
+        (self.project / "target" / "a" / "b").mkdir(parents=True)
+        self.assertEqual(self.verdict("Bash", command="grep -rn x .").returncode, 0)
+        self.assertEqual(self.verdict("Bash", command="grep -rn x src").returncode, 0)
+
     def test_search_too_big_to_check_is_blocked(self):
         big = self.project / "big"
         big.mkdir()

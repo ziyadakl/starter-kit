@@ -2,6 +2,8 @@
 
 ## 0.2.0
 
+- The `.env` guard's folder walk skips build output (`target`, `.next`, `dist`, `build`, …) and stops descending past 20 levels instead of blocking, so content searches in deep Java, Rust or Next.js trees with no `.env` are allowed.
+
 - Session status: `scripts/session-status.sh` runs at session start and prints the branch, uncommitted files, open pull requests, open issue count and free disk. The GitHub lines are left out when gh is missing, signed out or slow; the script always exits 0.
 - `.env` guard (`env-guard.py`, on Read, Grep and Bash): refuses to print the values of `.env` and `.env.<name>` files; `.env.example` and listing the names only stay allowed.
 - Merge guard (`merge-guard.py`, on Bash): refuses a pull request merge (the gh merge command or the merge API call) unless every check on the PR's head commit passed. Where `<git common dir>/review-stamps/` exists, the head commit must also be stamped there; repos without that folder are never asked for a stamp. `scripts/check.sh` stays the local CI; there is no separate script.

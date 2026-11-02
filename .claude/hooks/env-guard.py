@@ -145,27 +145,30 @@ def flag_values(args: list[str], *flags: str) -> list[str]:
     return values
 
 
-# Folders a search never needs to be stopped for: dependencies, caches and version-control internals.
+# Folders a search never needs to be stopped for: dependencies, caches, build output and version-control internals.
 SKIP_DIRS = {
     ".git", "node_modules", ".venv", "venv", "__pycache__", ".tox", ".mypy_cache", ".ruff_cache", ".pytest_cache",
+    "target", ".next", ".turbo", "dist", "build", "out", "coverage", ".gradle",
 }  # fmt: skip
-WALK_DEPTH = 8
+WALK_DEPTH = 20  # folders deeper than this are not looked into
 WALK_LIMIT = 20000  # files and folders looked at per search; KIT_ENV_WALK_LIMIT overrides (for tests)
 
 
 def holds_env(folder: Path) -> bool:
-    """A real `.env` file (not a template) sits in this folder or below it. Bounded: past the depth or entry cap the
-    answer is True, because a recursive search that cannot be checked cannot be shown to be safe."""
+    """A real `.env` file (not a template) sits in this folder or below it. Bounded: past the entry cap the answer is
+    True, because a recursive search that cannot be checked cannot be shown to be safe. Past the depth cap the walk
+    stops descending instead, so ordinary deep source trees (Java packages, Rust targets) never block a search."""
     limit = int(os.environ.get("KIT_ENV_WALK_LIMIT") or WALK_LIMIT)
     seen = 0
     base_depth = len(folder.parts)
     for root, dirs, files in os.walk(folder):
         seen += len(dirs) + len(files)
-        if seen > limit or len(Path(root).parts) - base_depth >= WALK_DEPTH:
+        if seen > limit:
             return True
         if any(is_env(name) for name in files):
             return True
-        dirs[:] = [d for d in dirs if d not in SKIP_DIRS]
+        deep = len(Path(root).parts) - base_depth >= WALK_DEPTH
+        dirs[:] = [] if deep else [d for d in dirs if d not in SKIP_DIRS]
     return False
 
 
