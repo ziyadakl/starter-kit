@@ -1,0 +1,27 @@
+# Runs only the private-names test: it needs the PRIVATE_NAMES secret. Everything else runs in check.yml.
+name: tests
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  private-names:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python3 -m unittest tests.test_private_names
+        env:
+          PRIVATE_NAMES: ${{ secrets.PRIVATE_NAMES }}

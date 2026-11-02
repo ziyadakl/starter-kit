@@ -1,0 +1,9 @@
+# Default gitleaks rules, plus two exceptions: the kit's own record holds file hashes,
+# which look like keys but are not, and compiled bytecode (ignored by git) can fold a
+# test's split-up fake key into one string.
+[extend]
+useDefault = true
+
+[allowlist]
+description = "starter-kit record of file hashes; ignored bytecode"
+paths = ['''^\.starter-kit\.json$''', '''(^|/)__pycache__/''']

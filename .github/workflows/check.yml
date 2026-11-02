@@ -1,0 +1,65 @@
+# The one CI check: runs scripts/check.sh, the same command as the local pre-push hook.
+# Pushes to main run it too, so the caches that pull requests restore stay filled.
+name: check
+
+on:
+  pull_request:
+    paths-ignore:
+      - '**/*.md'
+      - 'docs/**'
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up uv (cached)
+        id: setup-uv
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2  # v10.3.3
+        with:
+          enable-cache: true
+          # Only runs on main fill the cache; pull requests restore it.
+          save-cache: ${{ github.event_name == 'push' }}
+          cache-dependency-glob: |
+            **/uv.lock
+            **/pyproject.toml
+      # Pinned so local and CI agree; bump together with the local install.
+      - name: install shellcheck 0.11.0
+        run: |
+          curl -sSfL -o "$RUNNER_TEMP/sc.tar.xz" https://github.com/koalaman/shellcheck/releases/download/v0.11.0/shellcheck-v0.11.0.linux.x86_64.tar.xz
+          mkdir "$RUNNER_TEMP/sc"
+          tar -xJf "$RUNNER_TEMP/sc.tar.xz" -C "$RUNNER_TEMP/sc" --strip-components=1
+          sudo install "$RUNNER_TEMP/sc/shellcheck" /usr/local/bin/shellcheck
+          shellcheck --version
+      # Optional layer: puts gitleaks on the CI runner so the check job also runs the local key scan
+      # (and any test that plants a fake key stops skipping). Pinned like shellcheck; bump with the local install.
+      - name: install gitleaks 8.30.1
+        run: |
+          curl -sSfL -o "$RUNNER_TEMP/gitleaks.tar.gz" https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz
+          mkdir "$RUNNER_TEMP/gitleaks"
+          tar -xzf "$RUNNER_TEMP/gitleaks.tar.gz" -C "$RUNNER_TEMP/gitleaks" gitleaks
+          sudo install "$RUNNER_TEMP/gitleaks/gitleaks" /usr/local/bin/gitleaks
+          gitleaks version
+      # starter-kit: layer setup steps
+      - name: Run the project check
+        run: bash scripts/check.sh
+      - name: Report cache hits and misses
+        if: always()
+        env:
+          STEPS: ${{ toJSON(steps) }}
+        run: |
+          printf '%s' "$STEPS" | jq -r '
+            to_entries[]
+            | select(.value.outputs["cache-hit"] != null)
+            | "cache: \(.key) \(if .value.outputs["cache-hit"] == "true" then "hit" else "miss" end)"
+          ' >> "$GITHUB_STEP_SUMMARY"

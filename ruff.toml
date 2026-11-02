@@ -1,0 +1,5 @@
+# The kit's default rules (E,F,W,I,B,UP), minus line length: the formatter owns that,
+# and docstrings and long messages here read better unbroken.
+[lint]
+select = ["E", "F", "W", "I", "B", "UP"]
+ignore = ["E501"]

@@ -1,0 +1,10 @@
+- name: Set up uv (cached)
+  id: setup-uv
+  uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2  # v10.3.3
+  with:
+    enable-cache: true
+    # Only runs on main fill the cache; pull requests restore it.
+    save-cache: ${{ github.event_name == 'push' }}
+    cache-dependency-glob: |
+      **/uv.lock
+      **/pyproject.toml
