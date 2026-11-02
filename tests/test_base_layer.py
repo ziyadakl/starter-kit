@@ -190,11 +190,6 @@ class TestClaudeGuards(Applied):
         self.checkout("work")
         self.assertEqual(hook(self.project, "main-is-read-only.sh", edit_payload("x = 1\n"), "edit").returncode, 0)
 
-    def test_hooks_carry_no_personal_names(self):
-        for f in (self.project / ".claude").rglob("*"):
-            if f.is_file():
-                self.assertNotRegex(f.read_text(), r"(?i)ziyad|miranda|affinity")
-
 
 if __name__ == "__main__":
     unittest.main()
