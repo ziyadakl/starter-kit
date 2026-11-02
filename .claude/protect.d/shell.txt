@@ -1,0 +1,2 @@
+# Shell layer: shellcheck configuration (see .claude/hooks/config-guard.sh).
+.shellcheckrc

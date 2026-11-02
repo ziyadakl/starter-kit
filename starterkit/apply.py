@@ -37,8 +37,11 @@ def collect(layers_dir: Path, layers):
         files = root / "files"
         if files.is_dir():
             for f in sorted(files.rglob("*")):
+                rel = f.relative_to(files)
+                if "__pycache__" in rel.parts or f.suffix == ".pyc":
+                    continue  # bytecode a hook run left in the layer
                 if f.is_file():
-                    out[f.relative_to(files).as_posix()] = (
+                    out[rel.as_posix()] = (
                         f.read_bytes(),
                         f.stat().st_mode & 0o111,
                     )

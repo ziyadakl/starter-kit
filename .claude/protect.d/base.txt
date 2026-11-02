@@ -1,0 +1,5 @@
+# Files Claude may not edit (see .claude/hooks/config-guard.sh). Base layer.
+# The secret scanner's rules and allowlist: loosening them hides a leak instead of removing it.
+.gitleaks.toml
+# The lists themselves: shortening one would switch its protection off.
+.claude/protect.d/*
