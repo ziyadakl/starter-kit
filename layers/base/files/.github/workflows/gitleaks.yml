@@ -16,7 +16,7 @@ concurrency:
 jobs:
   gitleaks:
     name: No keys in the code (gitleaks)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-slim
     timeout-minutes: 10
     permissions:
       contents: read
