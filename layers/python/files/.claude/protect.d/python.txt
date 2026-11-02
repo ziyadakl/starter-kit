@@ -1,0 +1,6 @@
+# Python layer: lint, format and type-check configuration (see .claude/hooks/config-guard.sh).
+# pyproject.toml is not listed: it also holds dependencies, which Claude has to edit. A weakened
+# [tool.ruff] or [tool.pyright] section there is not caught.
+ruff.toml
+.ruff.toml
+pyrightconfig.json

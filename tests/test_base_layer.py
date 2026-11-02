@@ -185,7 +185,9 @@ class TestClaudeGuards(Applied):
         ]
         self.assertTrue(cmds)
         for cmd in cmds:
-            for rel in re.findall(r"\.claude/hooks/[\w.-]+\.sh", cmd):
+            for rel in re.findall(
+                r"(?:\.claude/hooks|scripts)/[\w.-]+\.(?:sh|py)", cmd
+            ):
                 p = self.path(rel)
                 self.assertTrue(p.is_file(), rel)
                 self.assertTrue(os.access(p, os.X_OK), rel)
@@ -193,9 +195,20 @@ class TestClaudeGuards(Applied):
     def test_does_not_duplicate_env_write_blocking(self):
         self.assertFalse(self.path(".claude/hooks/block-env-write.sh").exists())
 
-    def test_only_the_secret_guard_is_shipped(self):
+    def test_the_shipped_hooks(self):
         names = sorted(p.name for p in self.path(".claude/hooks").iterdir())
-        self.assertEqual(names, ["block-secrets.sh", "install-hooks-path.sh", "lib.sh"])
+        self.assertEqual(
+            names,
+            [
+                "block-secrets.sh",
+                "config-guard.sh",
+                "env-guard.py",
+                "install-hooks-path.sh",
+                "lib.sh",
+                "merge-guard.py",
+                "shell_words.py",
+            ],
+        )
 
     def test_secret_in_edit_is_blocked_and_placeholder_allowed(self):
         r = hook(

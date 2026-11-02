@@ -1,9 +1,16 @@
 {
   "files": {
     ".claude/hooks/block-secrets.sh": "9f5b186ddd3b0d07d0a842442f844c79d3aac13f30021fd350a264e459bf8a00",
+    ".claude/hooks/config-guard.sh": "bcc95da9c99a8e78c53234001215e871c9ddb22710c2d7208ac416e8cd8fa606",
+    ".claude/hooks/env-guard.py": "cbfa8eda45ab5c4ae09fcf1faccec88527110cad54a016644fcb42baf2c43945",
     ".claude/hooks/install-hooks-path.sh": "11f966d1f3897be642a02938f01a672329776597a455f8d9cfabbcddb3d376a9",
     ".claude/hooks/lib.sh": "50ec661f51f5955cb7adc5a61a51d6cfc23536e6e740ff5af9e989f3e8b41410",
-    ".claude/settings.json": "124c7655760d098571d8c5a3a39d75a9f244852caf12c4baccb62ed4072461d7",
+    ".claude/hooks/merge-guard.py": "7d605f104256e64abb80dc225aa6468430b783038678376d741ec0fba430f50f",
+    ".claude/hooks/shell_words.py": "a0afb5c94ead524c4487a79b69e5dd8e41c1bfd5b4cb3079ac479845d51ad58b",
+    ".claude/protect.d/base.txt": "01fe0aef80a2530412c68a898818fd79f98f13283445ec9fb871b491a0d49b2c",
+    ".claude/protect.d/python.txt": "d573431dd9cc5e0c0b703c7478430bef6c2ffa9793257f24466d16527ddf86ed",
+    ".claude/protect.d/shell.txt": "ad1473bb2733dedcc3b20213d3cc07ab9a555369cec9bdf1f1494715c494cb1f",
+    ".claude/settings.json": "879f18b2b80f7741b8c6506388b4a366b4c389cdb0f7fb9784841d5aa2038a90",
     ".githooks/pre-push": "7b86e35f28b62582a46e6bce3d696ab8a91d9988a72a10a854903d025d2d76f0",
     ".github/workflows/check.yml": "1fb0e736e84396b22401c9267886aaf2e1e7a5fa4b411f30f471d9275554ebf9",
     ".github/workflows/gitleaks.yml": "efb9a837059c1dad43d1c074f958508990d55b9daec5417306af780877f0ace7",
@@ -12,9 +19,10 @@
     "scripts/check.d/10-gitleaks.sh": "8ee1638bf59a676de4730ccf7f073db773b9e7d73e45430de016fc67e71d2d60",
     "scripts/check.d/20-python.sh": "8e02daea8c8adf37fc6233061eb9de7a1246c52db88c89828fda5247b8332719",
     "scripts/check.d/20-shellcheck.sh": "cbe216c82c467f36edf7a047136a8f191cdd5f04e2c07b1c677c135cb830c683",
-    "scripts/check.sh": "1fe704c13cc19de62d9d4b6ff01f9178c392e2f8dc209baa69a99cc30e40adc6"
+    "scripts/check.sh": "1fe704c13cc19de62d9d4b6ff01f9178c392e2f8dc209baa69a99cc30e40adc6",
+    "scripts/session-status.sh": "34646cadd6ef86008c24031688570f3dcae72a754f086f2d5b4269b1a6091cce"
   },
-  "kit_version": "0.1.0",
+  "kit_version": "0.2.0",
   "layers": [
     "base",
     "python",

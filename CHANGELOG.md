@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.0
+
+- Session status: `scripts/session-status.sh` runs at session start and prints the branch, uncommitted files, open pull requests, open issue count and free disk. The GitHub lines are left out when gh is missing, signed out or slow; the script always exits 0.
+- `.env` guard (`env-guard.py`, on Read, Grep and Bash): refuses to print the values of `.env` and `.env.<name>` files; `.env.example` and listing the names only stay allowed.
+- Merge guard (`merge-guard.py`, on Bash): refuses a pull request merge (the gh merge command or the merge API call) unless every check on the PR's head commit passed. Where `<git common dir>/review-stamps/` exists, the head commit must also be stamped there; repos without that folder are never asked for a stamp. `scripts/check.sh` stays the local CI; there is no separate script.
+- Config guard (`config-guard.sh`, on Edit, Write, MultiEdit and NotebookEdit): refuses edits to lint, format and scan configuration with "Fix the code, don't weaken the config." Each layer ships its own list in `.claude/protect.d/<layer>.txt` (base: `.gitleaks.toml`; python: `ruff.toml`, `.ruff.toml`, `pyrightconfig.json`; shell: `.shellcheckrc`). The owner overrides by starting Claude with `ALLOW_CONFIG_EDIT=1`, or by editing by hand. `pyproject.toml` is not covered.
+- A project whose `.claude/settings.json` has its own edits keeps them; `kit.py update` reports the file as left alone, and the new hook entries have to be copied in by hand.
+
 ## 0.1.0
 
 - Skeleton: `kit.py apply`, layer mechanism (files, check.d, ci-steps), `.starter-kit.json` record.
