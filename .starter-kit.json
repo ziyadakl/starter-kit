@@ -1,0 +1,23 @@
+{
+  "files": {
+    ".claude/hooks/block-risky-git.sh": "0ab6c3cd287e46034d5fc5f5e27d3f5a4c50561310c9f93d982aea6fc9d63625",
+    ".claude/hooks/block-secrets.sh": "9f5b186ddd3b0d07d0a842442f844c79d3aac13f30021fd350a264e459bf8a00",
+    ".claude/hooks/lib.sh": "50ec661f51f5955cb7adc5a61a51d6cfc23536e6e740ff5af9e989f3e8b41410",
+    ".claude/hooks/main-is-read-only.sh": "543ffd5164972544bee30e9d2d6f5aaa9429f49e4be50bee0de1b3937030193a",
+    ".claude/settings.json": "6d3d0700ca92953f3f4920ff9ef9d1249195fe143f256721c0ce585fe384dd1a",
+    ".githooks/pre-push": "7b86e35f28b62582a46e6bce3d696ab8a91d9988a72a10a854903d025d2d76f0",
+    ".github/workflows/check.yml": "8e4416c31055e0e4c2287755455308d9c0e67258295184c7e6f04abfa83a89b1",
+    ".gitleaks.toml": "378c2e4cebb8df703694a8fa1223f479bcc131c8cdc5385928092d53ccc7f844",
+    "renovate.json": "3986c22b4083da67ffec82ecbde24786dc2978b511ace5dd23ef4a291be0552a",
+    "scripts/check.d/10-gitleaks.sh": "5ba131c84ac96c72bc51acd6e769c96ead734d0feac4c28a46643bbec703445a",
+    "scripts/check.d/20-python.sh": "ef41dae60d621dca5df275eec6f0b86eebb55754509adfe248222e5659aeae51",
+    "scripts/check.d/20-shellcheck.sh": "cbe216c82c467f36edf7a047136a8f191cdd5f04e2c07b1c677c135cb830c683",
+    "scripts/check.sh": "1fe704c13cc19de62d9d4b6ff01f9178c392e2f8dc209baa69a99cc30e40adc6"
+  },
+  "kit_version": "0.1.0",
+  "layers": [
+    "base",
+    "python",
+    "shell"
+  ]
+}

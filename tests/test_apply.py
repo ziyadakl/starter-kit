@@ -2,7 +2,14 @@ import json
 import unittest
 from pathlib import Path
 
-from tests.helpers import KIT_ROOT, git_config, make_layers, new_project, run_check, run_kit
+from tests.helpers import (
+    KIT_ROOT,
+    git_config,
+    make_layers,
+    new_project,
+    run_check,
+    run_kit,
+)
 
 
 def plant(project, name, body):
@@ -47,7 +54,10 @@ class TestBaseLayer(ApplyBase):
     def test_check_self_installs_hooks_path_when_unset(self):
         run_kit("apply", self.project)
         import subprocess
-        subprocess.run(["git", "config", "--unset", "core.hooksPath"], cwd=self.project, check=True)
+
+        subprocess.run(
+            ["git", "config", "--unset", "core.hooksPath"], cwd=self.project, check=True
+        )
         run_check(self.project)
         self.assertEqual(git_config(self.project, "core.hooksPath"), ".githooks")
 
@@ -56,9 +66,12 @@ class TestBaseLayer(ApplyBase):
         plant(self.project, "50-broken.sh", "#!/usr/bin/env bash\nexit 1\n")
         import os
         import subprocess
+
         hook = self.project / ".githooks/pre-push"
         self.assertTrue(os.access(hook, os.X_OK))
-        r = subprocess.run([str(hook)], cwd=self.project, capture_output=True, text=True)
+        r = subprocess.run(
+            [str(hook)], cwd=self.project, capture_output=True, text=True, check=False
+        )
         self.assertNotEqual(r.returncode, 0)
 
     def test_apply_is_idempotent(self):
@@ -70,6 +83,7 @@ class TestBaseLayer(ApplyBase):
 
     def test_rejects_non_git_target(self):
         import tempfile
+
         with tempfile.TemporaryDirectory() as d:
             r = run_kit("apply", d)
             self.assertNotEqual(r.returncode, 0)
@@ -91,29 +105,41 @@ class TestRecord(ApplyBase):
 
     def test_hash_is_sha256_of_written_file(self):
         import hashlib
+
         run_kit("apply", self.project)
         rec = json.loads((self.project / ".starter-kit.json").read_text())
         data = (self.project / ".githooks/pre-push").read_bytes()
-        self.assertEqual(rec["files"][".githooks/pre-push"], hashlib.sha256(data).hexdigest())
+        self.assertEqual(
+            rec["files"][".githooks/pre-push"], hashlib.sha256(data).hexdigest()
+        )
 
 
 class TestLayerMechanism(ApplyBase):
     def setUp(self):
         super().setUp()
         import tempfile
+
         self.ltmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.ltmp.cleanup)
         self.layers = Path(self.ltmp.name)
         real = KIT_ROOT / "layers"
         import shutil
+
         shutil.copytree(real / "base", self.layers / "base")
 
     def test_layer_files_and_check_d_are_copied(self):
-        make_layers(self.layers, {"extra": {
-            "files/docs/note.txt": "hello\n",
-            "check.d/20-extra.sh": "#!/usr/bin/env bash\necho EXTRA-RAN\n",
-        }})
-        r = run_kit("apply", "--layers-dir", self.layers, "--layer", "extra", self.project)
+        make_layers(
+            self.layers,
+            {
+                "extra": {
+                    "files/docs/note.txt": "hello\n",
+                    "check.d/20-extra.sh": "#!/usr/bin/env bash\necho EXTRA-RAN\n",
+                }
+            },
+        )
+        r = run_kit(
+            "apply", "--layers-dir", self.layers, "--layer", "extra", self.project
+        )
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertEqual((self.project / "docs/note.txt").read_text(), "hello\n")
         c = run_check(self.project)
@@ -124,22 +150,40 @@ class TestLayerMechanism(ApplyBase):
         self.assertIn("scripts/check.d/20-extra.sh", rec["files"])
 
     def test_check_d_script_from_layer_can_fail_check(self):
-        make_layers(self.layers, {"bad": {"check.d/30-bad.sh": "#!/usr/bin/env bash\nexit 3\n"}})
+        make_layers(
+            self.layers, {"bad": {"check.d/30-bad.sh": "#!/usr/bin/env bash\nexit 3\n"}}
+        )
         run_kit("apply", "--layers-dir", self.layers, "--layer", "bad", self.project)
         c = run_check(self.project)
         self.assertNotEqual(c.returncode, 0)
         self.assertIn("30-bad.sh", c.stdout + c.stderr)
 
     def test_ci_steps_inserted_at_marker_with_indentation(self):
-        make_layers(self.layers, {
-            "base": {"files/.github/workflows/check.yml":
-                     "jobs:\n  check:\n    steps:\n      - uses: a\n      # starter-kit: layer setup steps\n      - run: z\n"},
-            "py": {"ci-steps.yml": "- name: py\n  run: echo py\n"},
-            "js": {"ci-steps.yml": "- name: js\n  run: echo js\n"},
-        })
-        run_kit("apply", "--layers-dir", self.layers, "--layer", "py", "--layer", "js", self.project)
+        make_layers(
+            self.layers,
+            {
+                "base": {
+                    "files/.github/workflows/check.yml": "jobs:\n  check:\n    steps:\n      - uses: a\n      # starter-kit: layer setup steps\n      - run: z\n"
+                },
+                "py": {"ci-steps.yml": "- name: py\n  run: echo py\n"},
+                "js": {"ci-steps.yml": "- name: js\n  run: echo js\n"},
+            },
+        )
+        run_kit(
+            "apply",
+            "--layers-dir",
+            self.layers,
+            "--layer",
+            "py",
+            "--layer",
+            "js",
+            self.project,
+        )
         text = (self.project / ".github/workflows/check.yml").read_text()
-        self.assertIn("      - name: py\n        run: echo py\n      - name: js\n        run: echo js\n", text)
+        self.assertIn(
+            "      - name: py\n        run: echo py\n      - name: js\n        run: echo js\n",
+            text,
+        )
         self.assertLess(text.index("name: py"), text.index("- run: z"))
         self.assertIn("# starter-kit: layer setup steps", text)
 
@@ -151,22 +195,34 @@ class TestLayerMechanism(ApplyBase):
 
     def test_recorded_hash_for_workflow_is_of_final_content(self):
         import hashlib
-        make_layers(self.layers, {
-            "base": {"files/.github/workflows/check.yml": "    # starter-kit: layer setup steps\n"},
-            "py": {"ci-steps.yml": "- run: x\n"},
-        })
+
+        make_layers(
+            self.layers,
+            {
+                "base": {
+                    "files/.github/workflows/check.yml": "    # starter-kit: layer setup steps\n"
+                },
+                "py": {"ci-steps.yml": "- run: x\n"},
+            },
+        )
         run_kit("apply", "--layers-dir", self.layers, "--layer", "py", self.project)
         rec = json.loads((self.project / ".starter-kit.json").read_text())
         data = (self.project / ".github/workflows/check.yml").read_bytes()
-        self.assertEqual(rec["files"][".github/workflows/check.yml"], hashlib.sha256(data).hexdigest())
+        self.assertEqual(
+            rec["files"][".github/workflows/check.yml"],
+            hashlib.sha256(data).hexdigest(),
+        )
 
 
 class TestKitMeta(unittest.TestCase):
     def test_version_is_semver_and_changelog_has_heading(self):
         import re
+
         v = (KIT_ROOT / "VERSION").read_text().strip()
         self.assertRegex(v, r"^\d+\.\d+\.\d+$")
-        self.assertRegex((KIT_ROOT / "CHANGELOG.md").read_text(), rf"(?m)^## {re.escape(v)}\b")
+        self.assertRegex(
+            (KIT_ROOT / "CHANGELOG.md").read_text(), rf"(?m)^## {re.escape(v)}\b"
+        )
 
 
 if __name__ == "__main__":

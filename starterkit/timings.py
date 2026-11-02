@@ -23,19 +23,23 @@ class TimingsError(Exception):
 
 
 def gh_api(path):
-    r = subprocess.run(["gh", "api", path], capture_output=True, text=True)
+    r = subprocess.run(["gh", "api", path], capture_output=True, text=True, check=False)
     if r.returncode != 0:
         raise TimingsError(f"gh api {path} failed: {r.stderr.strip()}")
     return json.loads(r.stdout)
 
 
 def _ts(s):
-    return datetime.fromisoformat(s.replace("Z", "+00:00")).timestamp()
+    return datetime.fromisoformat(s).timestamp()
 
 
 def _split(job):
     """Return (queue, setup, run) seconds, or None if the job did not finish."""
-    created, started, done = job.get("created_at"), job.get("started_at"), job.get("completed_at")
+    created, started, done = (
+        job.get("created_at"),
+        job.get("started_at"),
+        job.get("completed_at"),
+    )
     if not (created and started and done) or job.get("conclusion") == "skipped":
         return None
     t_created, t_started, t_done = _ts(created), _ts(started), _ts(done)
@@ -56,7 +60,9 @@ def _list_runs(repo, limit, gh):
     runs, page = [], 1
     while len(runs) < limit:
         per_page = min(limit, MAX_PAGE)
-        got = gh(f"repos/{repo}/actions/runs?per_page={per_page}&page={page}").get("workflow_runs", [])
+        got = gh(f"repos/{repo}/actions/runs?per_page={per_page}&page={page}").get(
+            "workflow_runs", []
+        )
         runs.extend(got)
         if len(got) < per_page:
             break
@@ -74,7 +80,7 @@ def collect(repo, runs, gh=gh_api):
                 samples.setdefault(job["name"], []).append(parts)
     stats = {}
     for name, rows in samples.items():
-        entry = {"count": len(rows)}
+        entry: dict = {"count": len(rows)}
         for i, key in enumerate(("queue", "setup", "run")):
             col = [r[i] for r in rows]
             entry[key] = {"median": statistics.median(col), "total": sum(col)}
@@ -95,15 +101,29 @@ def report(repo, runs, gh=gh_api):
     stats = collect(repo, runs, gh)
     if not stats:
         return f"no workflow runs with finished jobs found for {repo}"
-    head = ["job", "runs", "queue med", "setup med", "run med", "queue tot", "setup tot", "run tot"]
+    head = [
+        "job",
+        "runs",
+        "queue med",
+        "setup med",
+        "run med",
+        "queue tot",
+        "setup tot",
+        "run tot",
+    ]
     rows = [head]
     for name, s in sorted(stats.items()):
-        rows.append([name, str(s["count"])]
-                    + [fmt(s[k]["median"]) for k in ("queue", "setup", "run")]
-                    + [fmt(s[k]["total"]) for k in ("queue", "setup", "run")])
+        rows.append(
+            [name, str(s["count"])]
+            + [fmt(s[k]["median"]) for k in ("queue", "setup", "run")]
+            + [fmt(s[k]["total"]) for k in ("queue", "setup", "run")]
+        )
     widths = [max(len(r[i]) for r in rows) for i in range(len(head))]
     return "\n".join(
-        "  ".join(c.ljust(widths[i]) if i == 0 else c.rjust(widths[i]) for i, c in enumerate(r)).rstrip()
+        "  ".join(
+            c.ljust(widths[i]) if i == 0 else c.rjust(widths[i])
+            for i, c in enumerate(r)
+        ).rstrip()
         for r in rows
     )
 

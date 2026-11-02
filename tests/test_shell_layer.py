@@ -9,9 +9,11 @@ from tests.helpers import new_project, run_check, run_kit
 
 HAVE_SHELLCHECK = shutil.which("shellcheck") is not None
 
-CLEAN = '#!/usr/bin/env bash\nset -euo pipefail\nname="${1:-world}"\necho "hello $name"\n'
+CLEAN = (
+    '#!/usr/bin/env bash\nset -euo pipefail\nname="${1:-world}"\necho "hello $name"\n'
+)
 # SC2086: unquoted variable.
-BROKEN = '#!/usr/bin/env bash\nname=$1\necho $name\n'
+BROKEN = "#!/usr/bin/env bash\nname=$1\necho $name\n"
 
 
 class Applied(unittest.TestCase):
@@ -61,14 +63,30 @@ class TestMissingShellcheck(Applied):
     def test_missing_shellcheck_fails_with_install_hint(self):
         bin_dir = self.project / ".fakebin"
         bin_dir.mkdir()
-        for tool in ("bash", "git", "env", "dirname", "sh", "cat", "grep", "sed", "head"):
+        for tool in (
+            "bash",
+            "git",
+            "env",
+            "dirname",
+            "sh",
+            "cat",
+            "grep",
+            "sed",
+            "head",
+        ):
             src = shutil.which(tool)
             if src:
                 (bin_dir / tool).symlink_to(src)
         env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
         env["PATH"] = str(bin_dir)
-        c = subprocess.run([shutil.which("bash"), "scripts/check.sh"], capture_output=True,
-                           text=True, cwd=self.project, env=env)
+        c = subprocess.run(
+            [str(shutil.which("bash")), "scripts/check.sh"],
+            capture_output=True,
+            text=True,
+            cwd=self.project,
+            env=env,
+            check=False,
+        )
         self.assertNotEqual(c.returncode, 0, c.stdout)
         self.assertRegex(c.stdout + c.stderr, r"(?i)install shellcheck")
 
@@ -78,7 +96,9 @@ class TestWorkflowStep(Applied):
         text = (self.project / ".github/workflows/check.yml").read_text()
         self.assertRegex(text, r"install shellcheck \d+\.\d+\.\d+")
         self.assertRegex(text, r"shellcheck/releases/download/v\d+\.\d+\.\d+/")
-        self.assertLess(text.index("install shellcheck"), text.index("run: bash scripts/check.sh"))
+        self.assertLess(
+            text.index("install shellcheck"), text.index("run: bash scripts/check.sh")
+        )
 
 
 if __name__ == "__main__":

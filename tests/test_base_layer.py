@@ -32,7 +32,9 @@ class Applied(unittest.TestCase):
         return self.project / rel
 
     def checkout(self, branch):
-        subprocess.run(["git", "checkout", "-q", "-b", branch], cwd=self.project, check=True)
+        subprocess.run(
+            ["git", "checkout", "-q", "-b", branch], cwd=self.project, check=True
+        )
 
 
 class TestWorkflow(Applied):
@@ -104,8 +106,14 @@ class TestGitleaksCheck(Applied):
                 (bin_dir / tool).symlink_to(src)
         env = clean_env()
         env["PATH"] = str(bin_dir)
-        c = subprocess.run([shutil.which("bash"), "scripts/check.sh"], capture_output=True,
-                           text=True, cwd=self.project, env=env)
+        c = subprocess.run(
+            [str(shutil.which("bash")), "scripts/check.sh"],
+            capture_output=True,
+            text=True,
+            cwd=self.project,
+            env=env,
+            check=False,
+        )
         self.assertEqual(c.returncode, 0, c.stdout + c.stderr)
         self.assertRegex(c.stdout, r"(?i)gitleaks not installed")
 
@@ -122,7 +130,12 @@ def hook(project, name, payload, *args):
     env["CLAUDE_PROJECT_DIR"] = str(project)
     return subprocess.run(
         ["bash", str(project / ".claude/hooks" / name), *args],
-        input=json.dumps(payload), capture_output=True, text=True, cwd=project, env=env,
+        input=json.dumps(payload),
+        capture_output=True,
+        text=True,
+        cwd=project,
+        env=env,
+        check=False,
     )
 
 
@@ -137,7 +150,9 @@ def edit_payload(content):
 class TestClaudeGuards(Applied):
     def test_settings_is_json_and_every_hook_file_exists_and_is_executable(self):
         cfg = json.loads(self.path(".claude/settings.json").read_text())
-        cmds = [h["command"] for ev in cfg["hooks"].values() for g in ev for h in g["hooks"]]
+        cmds = [
+            h["command"] for ev in cfg["hooks"].values() for g in ev for h in g["hooks"]
+        ]
         self.assertTrue(cmds)
         for cmd in cmds:
             for rel in re.findall(r"\.claude/hooks/[\w.-]+\.sh", cmd):
@@ -149,15 +164,25 @@ class TestClaudeGuards(Applied):
         self.assertFalse(self.path(".claude/hooks/block-env-write.sh").exists())
 
     def test_blocks_destructive_git(self):
-        for cmd in ("git reset " + "--hard HEAD~1", "git push --force origin main", "git branch -D x",
-                    "git checkout -- .", "git clean -fd"):
+        for cmd in (
+            "git reset " + "--hard HEAD~1",
+            "git push --force origin main",
+            "git branch -D x",
+            "git checkout -- .",
+            "git clean -fd",
+        ):
             r = hook(self.project, "block-risky-git.sh", bash_payload(cmd))
             self.assertEqual(r.returncode, 2, cmd)
             self.assertIn("BLOCKED", r.stderr)
 
     def test_allows_ordinary_git_on_a_branch(self):
         self.checkout("work")
-        for cmd in ("git status", "git commit -m x", "git push origin work", "git restore --staged f"):
+        for cmd in (
+            "git status",
+            "git commit -m x",
+            "git push origin work",
+            "git restore --staged f",
+        ):
             r = hook(self.project, "block-risky-git.sh", bash_payload(cmd))
             self.assertEqual(r.returncode, 0, cmd + r.stderr)
 
@@ -167,28 +192,60 @@ class TestClaudeGuards(Applied):
         self.assertEqual(r.returncode, 2, r.stderr)
 
     def test_secret_in_edit_is_blocked_and_placeholder_allowed(self):
-        r = hook(self.project, "block-secrets.sh", edit_payload(f"token = '{fake_key()}'\n"), "edit")
+        r = hook(
+            self.project,
+            "block-secrets.sh",
+            edit_payload(f"token = '{fake_key()}'\n"),
+            "edit",
+        )
         self.assertEqual(r.returncode, 2, r.stderr)
         self.assertNotIn(fake_key(), r.stderr)
-        ok = hook(self.project, "block-secrets.sh", edit_payload("token = 'your-key-here'\n"), "edit")
+        ok = hook(
+            self.project,
+            "block-secrets.sh",
+            edit_payload("token = 'your-key-here'\n"),
+            "edit",
+        )
         self.assertEqual(ok.returncode, 0, ok.stderr)
 
     def test_secret_in_pending_commit_is_blocked(self):
         self.path("app.txt").write_text(f"key = {fake_key()}\n")
-        r = hook(self.project, "block-secrets.sh", bash_payload("git commit -m x"), "bash")
+        r = hook(
+            self.project, "block-secrets.sh", bash_payload("git commit -m x"), "bash"
+        )
         self.assertEqual(r.returncode, 2, r.stderr)
 
     def test_main_is_read_only_for_edits_and_history_changes(self):
         self.checkout("main")
-        self.assertEqual(hook(self.project, "main-is-read-only.sh", edit_payload("x = 1\n"), "edit").returncode, 2)
-        r = hook(self.project, "main-is-read-only.sh", bash_payload("git reset HEAD~1"), "bash")
+        self.assertEqual(
+            hook(
+                self.project, "main-is-read-only.sh", edit_payload("x = 1\n"), "edit"
+            ).returncode,
+            2,
+        )
+        r = hook(
+            self.project,
+            "main-is-read-only.sh",
+            bash_payload("git reset HEAD~1"),
+            "bash",
+        )
         self.assertEqual(r.returncode, 2)
-        ff = hook(self.project, "main-is-read-only.sh", bash_payload("git merge --ff-only origin/main"), "bash")
+        ff = hook(
+            self.project,
+            "main-is-read-only.sh",
+            bash_payload("git merge --ff-only origin/main"),
+            "bash",
+        )
         self.assertEqual(ff.returncode, 0)
 
     def test_main_read_only_allows_work_on_a_branch(self):
         self.checkout("work")
-        self.assertEqual(hook(self.project, "main-is-read-only.sh", edit_payload("x = 1\n"), "edit").returncode, 0)
+        self.assertEqual(
+            hook(
+                self.project, "main-is-read-only.sh", edit_payload("x = 1\n"), "edit"
+            ).returncode,
+            0,
+        )
 
 
 if __name__ == "__main__":

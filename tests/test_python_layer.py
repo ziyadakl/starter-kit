@@ -13,9 +13,9 @@ dependencies = []
 [tool.pytest.ini_options]
 pythonpath = ["."]
 """
-MODULE = '''def add(a: int, b: int) -> int:
+MODULE = """def add(a: int, b: int) -> int:
     return a + b
-'''
+"""
 TEST = """from demo import add
 
 
@@ -86,8 +86,12 @@ class TestPythonWorkflow(PythonProject):
         check_job = text.split("  gitleaks:")[0]
         self.assertIn("astral-sh/setup-uv@", check_job)
         self.assertIn("enable-cache: true", check_job)
-        self.assertRegex(check_job, r"(?m)^        id: \S+")  # the summary step reads its cache-hit output
-        self.assertLess(check_job.index("setup-uv"), check_job.index("run: bash scripts/check.sh"))
+        self.assertRegex(
+            check_job, r"(?m)^        id: \S+"
+        )  # the summary step reads its cache-hit output
+        self.assertLess(
+            check_job.index("setup-uv"), check_job.index("run: bash scripts/check.sh")
+        )
         self.assertNotIn("\t", text)
 
 

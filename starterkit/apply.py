@@ -2,7 +2,6 @@
 
 import hashlib
 import json
-import shutil
 import subprocess
 from pathlib import Path
 
@@ -39,7 +38,10 @@ def collect(layers_dir: Path, layers):
         if files.is_dir():
             for f in sorted(files.rglob("*")):
                 if f.is_file():
-                    out[f.relative_to(files).as_posix()] = (f.read_bytes(), f.stat().st_mode & 0o111)
+                    out[f.relative_to(files).as_posix()] = (
+                        f.read_bytes(),
+                        f.stat().st_mode & 0o111,
+                    )
         checks = root / "check.d"
         if checks.is_dir():
             for f in sorted(checks.iterdir()):
@@ -56,9 +58,15 @@ def insert_ci_steps(layers_dir: Path, layers, out):
             steps.append((name, f.read_text()))
     if not steps:
         return
-    found = [rel for rel, (data, _) in out.items() if rel.startswith(".github/workflows/") and MARKER.encode() in data]
+    found = [
+        rel
+        for rel, (data, _) in out.items()
+        if rel.startswith(".github/workflows/") and MARKER.encode() in data
+    ]
     if not found:
-        raise KitError("a layer has ci-steps.yml but no workflow contains the line: " + MARKER)
+        raise KitError(
+            "a layer has ci-steps.yml but no workflow contains the line: " + MARKER
+        )
     rel = found[0]
     data, mode = out[rel]
     lines = data.decode().splitlines(keepends=True)
@@ -93,4 +101,6 @@ def run(kit_root: Path, layers_dir: Path, names, target: Path):
     version = (kit_root / "VERSION").read_text().strip()
     record = {"kit_version": version, "layers": layers, "files": hashes}
     (target / RECORD).write_text(json.dumps(record, indent=2, sort_keys=True) + "\n")
-    subprocess.run(["git", "-C", str(target), "config", "core.hooksPath", ".githooks"], check=True)
+    subprocess.run(
+        ["git", "-C", str(target), "config", "core.hooksPath", ".githooks"], check=True
+    )

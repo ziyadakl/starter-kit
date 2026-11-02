@@ -13,7 +13,10 @@ KIT_PY = KIT_ROOT / "kit.py"
 def run_kit(*args, cwd=None):
     return subprocess.run(
         [sys.executable, str(KIT_PY), *map(str, args)],
-        capture_output=True, text=True, cwd=cwd,
+        capture_output=True,
+        text=True,
+        cwd=cwd,
+        check=False,
     )
 
 
@@ -28,13 +31,22 @@ def new_project():
 def run_check(project):
     env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
     return subprocess.run(
-        ["bash", "scripts/check.sh"], capture_output=True, text=True, cwd=project, env=env,
+        ["bash", "scripts/check.sh"],
+        capture_output=True,
+        text=True,
+        cwd=project,
+        env=env,
+        check=False,
     )
 
 
 def git_config(project, key):
     out = subprocess.run(
-        ["git", "config", "--get", key], capture_output=True, text=True, cwd=project,
+        ["git", "config", "--get", key],
+        capture_output=True,
+        text=True,
+        cwd=project,
+        check=False,
     )
     return out.stdout.strip()
 

@@ -19,10 +19,16 @@ ALLOWED_EMAIL_DOMAINS = {"example.com", "example.org"}
 
 
 def files():
-    out = subprocess.run(
-        ["git", "ls-files", "-z", "--cached", "--others", "--exclude-standard"],
-        cwd=ROOT, capture_output=True, check=True,
-    ).stdout.decode().split("\0")
+    out = (
+        subprocess.run(
+            ["git", "ls-files", "-z", "--cached", "--others", "--exclude-standard"],
+            cwd=ROOT,
+            capture_output=True,
+            check=True,
+        )
+        .stdout.decode()
+        .split("\0")
+    )
     for rel in filter(None, out):
         if rel.startswith(".git/") or not (ROOT / rel).is_file():
             continue
@@ -48,17 +54,29 @@ def scan(text, literals=()):
 
 
 def literals_from_env():
-    return [n.strip() for n in os.environ.get("PRIVATE_NAMES", "").split(",") if n.strip()]
+    return [
+        n.strip() for n in os.environ.get("PRIVATE_NAMES", "").split(",") if n.strip()
+    ]
 
 
 class TestScanner(unittest.TestCase):
     def test_flags_personal_paths_emails_tailnet_and_literals(self):
-        text = "/" + "Users/someone/x /" + "home/someone/y a@b" + ".io host.tail1234.ts" + ".net secretword"
+        text = (
+            "/"
+            + "Users/someone/x /"
+            + "home/someone/y a@b"
+            + ".io host.tail1234.ts"
+            + ".net secretword"
+        )
         found = scan(text, ["SecretWord"])
         self.assertEqual(len(found), 5, found)
 
     def test_allows_generic_examples(self):
-        text = "/" + "Users/<name>/x /" + "home/runner/work a@example.com b@example.org noreply@anthropic.com"
+        text = (
+            "/"
+            + "Users/<name>/x /"
+            + "home/runner/work a@example.com b@example.org noreply@anthropic.com"
+        )
         self.assertEqual(scan(text), [])
 
 

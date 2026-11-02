@@ -40,7 +40,9 @@ def run(kit_root: Path, layers_dir: Path, target: Path, out=print):
     insert_ci_steps(layers_dir, layers, new_files)
     version = (kit_root / "VERSION").read_text().strip()
 
-    entries = changelog_since((kit_root / "CHANGELOG.md").read_text(), record["kit_version"])
+    entries = changelog_since(
+        (kit_root / "CHANGELOG.md").read_text(), record["kit_version"]
+    )
     if entries:
         out(f"Changes since {record['kit_version']}:\n")
         out("\n".join(entries))
@@ -83,7 +85,9 @@ def run(kit_root: Path, layers_dir: Path, target: Path, out=print):
     record["kit_version"] = version
     record["files"] = hashes
     rec_path.write_text(json.dumps(record, indent=2, sort_keys=True) + "\n")
-    subprocess.run(["git", "-C", str(target), "config", "core.hooksPath", ".githooks"], check=True)
+    subprocess.run(
+        ["git", "-C", str(target), "config", "core.hooksPath", ".githooks"], check=True
+    )
 
     _report(out, "Updated", updated)
     _report(out, "Added (new in the kit)", added)
@@ -91,9 +95,17 @@ def run(kit_root: Path, layers_dir: Path, target: Path, out=print):
         out("Left alone, the project edited these (kit changed: yes/no):")
         for rel, changed in edited:
             out(f"  {rel} ({'yes' if changed else 'no'})")
-    _report(out, "Left alone, the project already has a different file at the path of a new kit file", conflicts)
+    _report(
+        out,
+        "Left alone, the project already has a different file at the path of a new kit file",
+        conflicts,
+    )
     _report(out, "Left alone, the project deleted these and they stay deleted", deleted)
-    _report(out, "Kept, the kit no longer ships these (now yours; delete if unwanted)", removed)
+    _report(
+        out,
+        "Kept, the kit no longer ships these (now yours; delete if unwanted)",
+        removed,
+    )
     if not (updated or added or edited or conflicts or deleted or removed or entries):
         out(f"Already up to date at {version}.")
 

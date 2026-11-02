@@ -34,6 +34,7 @@ class FakeKit:
 
     def set(self, version, files, changelog=CHANGELOG):
         import shutil
+
         shutil.rmtree(self.layers, ignore_errors=True)
         make_layers(self.layers, {"base": {f"files/{k}": v for k, v in files.items()}})
         (self.root / "VERSION").write_text(version + "\n")
@@ -43,7 +44,9 @@ class FakeKit:
         apply_cmd.run(self.root, self.layers, [], project)
 
     def update(self, project):
-        return run_kit("update", "--kit-root", self.root, "--layers-dir", self.layers, project)
+        return run_kit(
+            "update", "--kit-root", self.root, "--layers-dir", self.layers, project
+        )
 
 
 def record(project):
@@ -114,7 +117,9 @@ class TestUpdate(unittest.TestCase):
         (self.project / "a.txt").write_text("a2\n")
         self.kit.set("0.2.0", {"a.txt": "a2\n", "b.txt": "b1\n"})
         self.kit.update(self.project)
-        self.assertEqual(record(self.project)["files"]["a.txt"], apply_cmd.sha256(b"a2\n"))
+        self.assertEqual(
+            record(self.project)["files"]["a.txt"], apply_cmd.sha256(b"a2\n")
+        )
 
     def test_update_without_record_fails_clearly(self):
         tmp, bare = new_project()
@@ -124,7 +129,11 @@ class TestUpdate(unittest.TestCase):
         self.assertIn("apply", r.stderr)
 
     def test_already_current_says_so(self):
-        self.kit.set("0.1.0", {"a.txt": "a1\n", "b.txt": "b1\n"}, "# Changelog\n\n## 0.1.0\n\n- first release\n")
+        self.kit.set(
+            "0.1.0",
+            {"a.txt": "a1\n", "b.txt": "b1\n"},
+            "# Changelog\n\n## 0.1.0\n\n- first release\n",
+        )
         r = self.kit.update(self.project)
         self.assertEqual(r.returncode, 0)
         self.assertIn("up to date", r.stdout)

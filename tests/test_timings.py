@@ -38,7 +38,10 @@ class TimingsTest(unittest.TestCase):
         self.assertEqual((check["run"]["median"], check["run"]["total"]), (120, 240))
         lint = stats["lint"]
         self.assertEqual(lint["count"], 1)
-        self.assertEqual((lint["queue"]["total"], lint["setup"]["total"], lint["run"]["total"]), (5, 10, 30))
+        self.assertEqual(
+            (lint["queue"]["total"], lint["setup"]["total"], lint["run"]["total"]),
+            (5, 10, 30),
+        )
 
     def test_table_lists_each_job(self):
         out = timings.report("example/repo", 10, gh=fake_gh())
@@ -61,18 +64,42 @@ class TimingsTest(unittest.TestCase):
         self.assertIn("no workflow runs", out)
 
     def test_unfinished_jobs_are_skipped(self):
-        jobs = {"jobs": [{"name": "x", "created_at": "2025-01-01T10:00:00Z",
-                          "started_at": None, "completed_at": None, "steps": []}]}
-        gh = lambda p: {"workflow_runs": [{"id": 1}]} if "page=1" in p else (
-            jobs if p.endswith("/jobs") else {"workflow_runs": []})
+        jobs = {
+            "jobs": [
+                {
+                    "name": "x",
+                    "created_at": "2025-01-01T10:00:00Z",
+                    "started_at": None,
+                    "completed_at": None,
+                    "steps": [],
+                }
+            ]
+        }
+        gh = lambda p: (
+            {"workflow_runs": [{"id": 1}]}
+            if "page=1" in p
+            else (jobs if p.endswith("/jobs") else {"workflow_runs": []})
+        )
         self.assertEqual(timings.collect("example/repo", 5, gh=gh), {})
 
     def test_skipped_jobs_are_ignored(self):
-        jobs = {"jobs": [{"name": "x", "conclusion": "skipped", "created_at": "2025-01-01T10:00:00Z",
-                          "started_at": "2025-01-01T10:00:05Z", "completed_at": "2025-01-01T10:00:04Z",
-                          "steps": []}]}
-        gh = lambda p: {"workflow_runs": [{"id": 1}]} if "page=1" in p else (
-            jobs if p.endswith("/jobs") else {"workflow_runs": []})
+        jobs = {
+            "jobs": [
+                {
+                    "name": "x",
+                    "conclusion": "skipped",
+                    "created_at": "2025-01-01T10:00:00Z",
+                    "started_at": "2025-01-01T10:00:05Z",
+                    "completed_at": "2025-01-01T10:00:04Z",
+                    "steps": [],
+                }
+            ]
+        }
+        gh = lambda p: (
+            {"workflow_runs": [{"id": 1}]}
+            if "page=1" in p
+            else (jobs if p.endswith("/jobs") else {"workflow_runs": []})
+        )
         self.assertEqual(timings.collect("example/repo", 5, gh=gh), {})
 
     def test_cli_wired(self):
