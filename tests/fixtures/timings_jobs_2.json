@@ -1,0 +1,54 @@
+{
+ "jobs": [
+  {
+   "id": 21,
+   "name": "check",
+   "created_at": "2025-01-02T10:00:00Z",
+   "started_at": "2025-01-02T10:00:30Z",
+   "completed_at": "2025-01-02T10:03:30Z",
+   "conclusion": "success",
+   "steps": [
+    {
+     "name": "Set up job",
+     "started_at": "2025-01-02T10:00:30Z",
+     "completed_at": "2025-01-02T10:00:30Z"
+    },
+    {
+     "name": "Run actions/checkout@v4",
+     "started_at": "2025-01-02T10:00:30Z",
+     "completed_at": "2025-01-02T10:01:10Z"
+    },
+    {
+     "name": "Run scripts/check.sh",
+     "started_at": "2025-01-02T10:01:10Z",
+     "completed_at": "2025-01-02T10:03:30Z"
+    }
+   ]
+  },
+  {
+   "id": 22,
+   "name": "lint",
+   "created_at": "2025-01-02T10:00:00Z",
+   "started_at": "2025-01-02T10:00:05Z",
+   "completed_at": "2025-01-02T10:00:45Z",
+   "conclusion": "success",
+   "steps": [
+    {
+     "name": "Set up job",
+     "started_at": "2025-01-02T10:00:05Z",
+     "completed_at": "2025-01-02T10:00:05Z"
+    },
+    {
+     "name": "Run actions/checkout@v4",
+     "started_at": "2025-01-02T10:00:05Z",
+     "completed_at": "2025-01-02T10:00:15Z"
+    },
+    {
+     "name": "Run scripts/check.sh",
+     "started_at": "2025-01-02T10:00:15Z",
+     "completed_at": "2025-01-02T10:00:45Z"
+    }
+   ]
+  }
+ ]
+}
