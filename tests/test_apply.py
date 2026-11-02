@@ -247,7 +247,9 @@ class TestExistingProjectFiles(ApplyBase):
         r = run_kit("apply", self.project)
         self.assertNotEqual(r.returncode, 0)
         self.assertIn("renovate.json", r.stdout + r.stderr)
-        self.assertEqual((self.project / "renovate.json").read_text(), '{"mine": true}\n')
+        self.assertEqual(
+            (self.project / "renovate.json").read_text(), '{"mine": true}\n'
+        )
         self.assertFalse((self.project / ".starter-kit.json").exists())
 
     def test_force_overwrites_the_differing_file(self):
@@ -259,7 +261,11 @@ class TestExistingProjectFiles(ApplyBase):
     def test_another_hooks_path_is_kept(self):
         import subprocess
 
-        subprocess.run(["git", "config", "core.hooksPath", ".husky/_"], cwd=self.project, check=True)
+        subprocess.run(
+            ["git", "config", "core.hooksPath", ".husky/_"],
+            cwd=self.project,
+            check=True,
+        )
         r = run_kit("apply", self.project)
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertEqual(git_config(self.project, "core.hooksPath"), ".husky/_")
