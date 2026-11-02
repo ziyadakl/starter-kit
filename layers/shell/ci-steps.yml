@@ -1,0 +1,8 @@
+# Pinned so local and CI agree; bump together with the local install.
+- name: install shellcheck 0.11.0
+  run: |
+    curl -sSfL -o "$RUNNER_TEMP/sc.tar.xz" https://github.com/koalaman/shellcheck/releases/download/v0.11.0/shellcheck-v0.11.0.linux.x86_64.tar.xz
+    mkdir "$RUNNER_TEMP/sc"
+    tar -xJf "$RUNNER_TEMP/sc.tar.xz" -C "$RUNNER_TEMP/sc" --strip-components=1
+    sudo install "$RUNNER_TEMP/sc/shellcheck" /usr/local/bin/shellcheck
+    shellcheck --version
