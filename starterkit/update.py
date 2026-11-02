@@ -20,7 +20,7 @@ def parse_version(text):
     try:
         return tuple(int(p) for p in text.strip().split("."))
     except ValueError:
-        raise KitError(f"not a version: {text!r}")
+        raise KitError(f"not a version: {text!r}") from None
 
 
 def changelog_since(changelog: str, recorded: str):

@@ -7,7 +7,7 @@ import shutil
 import subprocess
 import unittest
 
-from tests.helpers import new_project, run_check, run_kit
+from tests.helpers import git_config, new_project, run_check, run_kit
 
 HAVE_GITLEAKS = shutil.which("gitleaks") is not None
 
@@ -55,16 +55,24 @@ class TestWorkflow(Applied):
         self.assertIn("'docs/**'", self.text)
         self.assertRegex(self.text, r"(?s)push:\s*\n\s*branches: \[main\]")
 
-    def test_concurrency_cancels_superseded_runs(self):
-        self.assertIn("group: ${{ github.workflow }}-${{ github.ref }}", self.text)
-        self.assertIn("cancel-in-progress: true", self.text)
+    def test_concurrency_cancels_only_superseded_pull_request_runs(self):
+        for rel in (".github/workflows/check.yml", ".github/workflows/gitleaks.yml"):
+            text = self.path(rel).read_text()
+            self.assertIn("group: ${{ github.workflow }}-${{ github.ref }}", text, rel)
+            self.assertIn(
+                "cancel-in-progress: ${{ github.event_name == 'pull_request' }}",
+                text,
+                rel,
+            )
+            self.assertNotRegex(text, r"cancel-in-progress: true", rel)
 
     def test_every_job_has_a_time_limit(self):
         jobs = self.jobs()
         self.assertIn("check", jobs)
-        self.assertIn("gitleaks", jobs)
         for name, block in jobs.items():
             self.assertRegex(block, r"(?m)^    timeout-minutes: \d+", name)
+        gl = self.path(".github/workflows/gitleaks.yml").read_text()
+        self.assertRegex(gl, r"(?m)^    timeout-minutes: \d+")
 
     def test_check_job_runs_check_script_and_reports_cache(self):
         block = self.jobs()["check"]
@@ -73,10 +81,15 @@ class TestWorkflow(Applied):
         self.assertIn("GITHUB_STEP_SUMMARY", block)
         self.assertIn("cache: ", block)
 
-    def test_gitleaks_job_scans_full_history(self):
-        block = self.jobs()["gitleaks"]
-        self.assertIn("fetch-depth: 0", block)
-        self.assertIn("gitleaks/gitleaks-action", block)
+    def test_gitleaks_has_its_own_workflow_that_docs_only_changes_do_not_skip(self):
+        gl = self.path(".github/workflows/gitleaks.yml").read_text()
+        self.assertNotIn("paths-ignore", gl)
+        self.assertNotIn("paths:", gl)
+        self.assertRegex(gl, r"(?m)^  pull_request:")
+        self.assertRegex(gl, r"(?s)push:\s*\n\s*branches: \[main\]")
+        self.assertIn("fetch-depth: 0", gl)
+        self.assertIn("gitleaks/gitleaks-action", gl)
+        self.assertNotIn("gitleaks-action", self.text)
 
     def test_no_tab_characters(self):
         self.assertNotIn("\t", self.text)
@@ -94,7 +107,23 @@ class TestGitleaksCheck(Applied):
         self.path("config.txt").write_text(f"github_token = {fake_key()}\n")
         c = run_check(self.project)
         self.assertNotEqual(c.returncode, 0, c.stdout)
-        self.assertIn("gitleaks", c.stdout + c.stderr)
+        self.assertIn("leaks found", c.stdout + c.stderr)
+        self.assertIn("CHECK FAILED: scripts/check.d/10-gitleaks.sh", c.stderr)
+
+    def test_key_in_git_ignored_env_passes_but_in_tracked_file_fails(self):
+        if not HAVE_GITLEAKS:
+            self.skipTest("gitleaks not installed")
+        self.path(".gitignore").write_text(".env\n.venv/\n")
+        self.path(".env").write_text(f"GITHUB_TOKEN={fake_key()}\n")
+        (self.path(".venv")).mkdir()
+        self.path(".venv/secret.txt").write_text(f"token = {fake_key()}\n")
+        c = run_check(self.project)
+        self.assertEqual(c.returncode, 0, c.stdout + c.stderr)
+        self.path("tracked.txt").write_text(f"GITHUB_TOKEN={fake_key()}\n")
+        subprocess.run(["git", "add", "tracked.txt"], cwd=self.project, check=True)
+        c = run_check(self.project)
+        self.assertNotEqual(c.returncode, 0, c.stdout)
+        self.assertIn("leaks found", c.stdout + c.stderr)
 
     def test_missing_gitleaks_prints_one_line_skip_and_passes(self):
         # Run with a PATH holding only the tools the check needs, so gitleaks is hidden.
@@ -119,10 +148,11 @@ class TestGitleaksCheck(Applied):
 
 
 class TestRenovate(Applied):
-    def test_renovate_config_is_json_with_preset_and_no_project_rules(self):
+    def test_renovate_config_proposes_updates_and_never_automerges(self):
         cfg = json.loads(self.path("renovate.json").read_text())
-        self.assertIn("extends", cfg)
+        self.assertEqual(cfg["extends"], ["config:recommended"])
         self.assertNotIn("packageRules", cfg)
+        self.assertNotIn("automerge", self.path("renovate.json").read_text())
 
 
 def hook(project, name, payload, *args):
@@ -163,33 +193,9 @@ class TestClaudeGuards(Applied):
     def test_does_not_duplicate_env_write_blocking(self):
         self.assertFalse(self.path(".claude/hooks/block-env-write.sh").exists())
 
-    def test_blocks_destructive_git(self):
-        for cmd in (
-            "git reset " + "--hard HEAD~1",
-            "git push --force origin main",
-            "git branch -D x",
-            "git checkout -- .",
-            "git clean -fd",
-        ):
-            r = hook(self.project, "block-risky-git.sh", bash_payload(cmd))
-            self.assertEqual(r.returncode, 2, cmd)
-            self.assertIn("BLOCKED", r.stderr)
-
-    def test_allows_ordinary_git_on_a_branch(self):
-        self.checkout("work")
-        for cmd in (
-            "git status",
-            "git commit -m x",
-            "git push origin work",
-            "git restore --staged f",
-        ):
-            r = hook(self.project, "block-risky-git.sh", bash_payload(cmd))
-            self.assertEqual(r.returncode, 0, cmd + r.stderr)
-
-    def test_blocks_committing_on_main(self):
-        self.checkout("main")
-        r = hook(self.project, "block-risky-git.sh", bash_payload("git commit -m x"))
-        self.assertEqual(r.returncode, 2, r.stderr)
+    def test_only_the_secret_guard_is_shipped(self):
+        names = sorted(p.name for p in self.path(".claude/hooks").iterdir())
+        self.assertEqual(names, ["block-secrets.sh", "install-hooks-path.sh", "lib.sh"])
 
     def test_secret_in_edit_is_blocked_and_placeholder_allowed(self):
         r = hook(
@@ -215,37 +221,28 @@ class TestClaudeGuards(Applied):
         )
         self.assertEqual(r.returncode, 2, r.stderr)
 
-    def test_main_is_read_only_for_edits_and_history_changes(self):
-        self.checkout("main")
-        self.assertEqual(
-            hook(
-                self.project, "main-is-read-only.sh", edit_payload("x = 1\n"), "edit"
-            ).returncode,
-            2,
-        )
-        r = hook(
-            self.project,
-            "main-is-read-only.sh",
-            bash_payload("git reset HEAD~1"),
-            "bash",
-        )
-        self.assertEqual(r.returncode, 2)
-        ff = hook(
-            self.project,
-            "main-is-read-only.sh",
-            bash_payload("git merge --ff-only origin/main"),
-            "bash",
-        )
-        self.assertEqual(ff.returncode, 0)
+    def test_session_start_hook_is_registered(self):
+        cfg = json.loads(self.path(".claude/settings.json").read_text())
+        cmds = [h["command"] for g in cfg["hooks"]["SessionStart"] for h in g["hooks"]]
+        self.assertTrue(any("install-hooks-path.sh" in c for c in cmds))
 
-    def test_main_read_only_allows_work_on_a_branch(self):
-        self.checkout("work")
-        self.assertEqual(
-            hook(
-                self.project, "main-is-read-only.sh", edit_payload("x = 1\n"), "edit"
-            ).returncode,
-            0,
+    def test_session_start_hook_installs_hooks_path_on_a_fresh_clone(self):
+        subprocess.run(
+            ["git", "config", "--unset", "core.hooksPath"], cwd=self.project, check=True
         )
+        r = hook(self.project, "install-hooks-path.sh", {})
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(git_config(self.project, "core.hooksPath"), ".githooks")
+
+    def test_session_start_hook_leaves_a_chosen_hooks_path_alone(self):
+        subprocess.run(
+            ["git", "config", "core.hooksPath", "my-hooks"],
+            cwd=self.project,
+            check=True,
+        )
+        r = hook(self.project, "install-hooks-path.sh", {})
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(git_config(self.project, "core.hooksPath"), "my-hooks")
 
 
 if __name__ == "__main__":

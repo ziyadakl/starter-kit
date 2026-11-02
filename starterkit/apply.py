@@ -138,7 +138,5 @@ def run(kit_root: Path, layers_dir: Path, names, target: Path, force=False, out=
         hashes[rel] = sha256(data)
 
     version = (kit_root / "VERSION").read_text().strip()
-    write_record(
-        target, {"kit_version": version, "layers": layers, "files": hashes}
-    )
+    write_record(target, {"kit_version": version, "layers": layers, "files": hashes})
     install_hooks_path(target, out)

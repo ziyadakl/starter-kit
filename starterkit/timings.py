@@ -77,7 +77,9 @@ def collect(repo, runs, gh=gh_api):
     """Return {job name: {"count": n, "queue"|"setup"|"run": {"median", "total"}}}."""
     samples = {}
     for run in _list_runs(repo, runs, gh):
-        for job in gh(f"repos/{repo}/actions/runs/{run['id']}/jobs?per_page={MAX_PAGE}").get("jobs", []):
+        for job in gh(
+            f"repos/{repo}/actions/runs/{run['id']}/jobs?per_page={MAX_PAGE}"
+        ).get("jobs", []):
             parts = _split(job)
             if parts:
                 samples.setdefault(job["name"], []).append(parts)

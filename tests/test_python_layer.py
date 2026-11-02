@@ -62,25 +62,60 @@ class TestPythonCheck(PythonProject):
         self.plant("lint.py", "import os\n")
         c, out = self.check()
         self.assertNotEqual(c.returncode, 0, out)
-        self.assertIn("CHECK FAILED", out)
+        self.assertIn("F401", out)
+        self.assertIn("CHECK FAILED: scripts/check.d/20-python.sh", out)
 
     def test_format_violation_fails(self):
         self.plant("fmt.py", "x = {  'a':1 }\n")
         c, out = self.check()
         self.assertNotEqual(c.returncode, 0, out)
+        self.assertIn("File would be reformatted", out)
+        self.assertIn("fmt.py", out)
 
     def test_type_error_fails(self):
         self.plant("typed.py", 'x: int = "text"\n')
         c, out = self.check()
         self.assertNotEqual(c.returncode, 0, out)
+        self.assertIn("reportAssignmentType", out)
 
     def test_failing_test_fails(self):
-        self.plant("tests/test_bad.py", "def test_bad():\n    assert False\n")
+        self.plant("tests/test_bad.py", "def test_bad():\n    assert 1 == 2\n")
         c, out = self.check()
         self.assertNotEqual(c.returncode, 0, out)
+        self.assertIn("1 failed", out)
+
+    def test_default_rules_include_import_sorting_and_modern_syntax(self):
+        self.plant("order.py", "import sys\nimport os\n\nprint(os, sys)\n")
+        c, out = self.check()
+        self.assertNotEqual(c.returncode, 0, out)
+        self.assertIn("I001", out)
+
+    def test_default_rules_include_bugbear_and_pyupgrade(self):
+        self.plant("old.py", "from typing import List\n\nx: List[int] = []\n")
+        c, out = self.check()
+        self.assertNotEqual(c.returncode, 0, out)
+        self.assertIn("UP", out)
+
+    def test_project_ruff_config_in_pyproject_is_respected(self):
+        (self.project / "pyproject.toml").write_text(
+            PYPROJECT + '\n[tool.ruff.lint]\nselect = ["F"]\n'
+        )
+        self.plant("order.py", "import sys\nimport os\n\nprint(os, sys)\n")
+        c, out = self.check()
+        self.assertEqual(c.returncode, 0, out)
+
+    def test_project_ruff_toml_is_respected(self):
+        self.plant("ruff.toml", '[lint]\nselect = ["F"]\n')
+        self.plant("order.py", "import sys\nimport os\n\nprint(os, sys)\n")
+        c, out = self.check()
+        self.assertEqual(c.returncode, 0, out)
 
 
 class TestPythonWorkflow(PythonProject):
+    def test_uv_cache_is_saved_only_on_push_events(self):
+        text = (self.project / ".github/workflows/check.yml").read_text()
+        self.assertIn("save-cache: ${{ github.event_name == 'push' }}", text)
+
     def test_workflow_sets_up_uv_with_cache_inside_check_job(self):
         text = (self.project / ".github/workflows/check.yml").read_text()
         check_job = text.split("  gitleaks:")[0]

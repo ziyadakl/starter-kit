@@ -214,6 +214,18 @@ class TestLayerMechanism(ApplyBase):
         )
 
 
+class TestGitleaksCiLayer(ApplyBase):
+    def test_layer_installs_a_pinned_gitleaks_before_the_check_runs(self):
+        r = run_kit("apply", "--layer", "gitleaks-ci", self.project)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        text = (self.project / ".github/workflows/check.yml").read_text()
+        self.assertRegex(text, r"install gitleaks \d+\.\d+\.\d+")
+        self.assertRegex(text, r"gitleaks/releases/download/v\d+\.\d+\.\d+/")
+        self.assertLess(
+            text.index("install gitleaks"), text.index("run: bash scripts/check.sh")
+        )
+
+
 class TestKitMeta(unittest.TestCase):
     def test_version_is_semver_and_changelog_has_heading(self):
         import re

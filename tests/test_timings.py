@@ -48,10 +48,10 @@ class TimingsTest(unittest.TestCase):
         lines = out.splitlines()
         self.assertIn("job", lines[0])
         self.assertIn("queue", lines[0])
-        check = next(l for l in lines if l.startswith("check"))
+        check = next(ln for ln in lines if ln.startswith("check"))
         self.assertIn("20s", check)
         self.assertIn("2m00s", check)
-        self.assertTrue(any(l.startswith("lint") for l in lines))
+        self.assertTrue(any(ln.startswith("lint") for ln in lines))
 
     def test_runs_limit_is_requested_and_respected(self):
         calls = []
@@ -86,8 +86,9 @@ class TimingsTest(unittest.TestCase):
                     step("Run tests", 30, 50),
                 ],
             }
-            _, setup, run = timings._split(job)
-            self.assertEqual((setup, run), (30, 20), install)
+            parts = timings._split(job)
+            assert parts is not None
+            self.assertEqual(parts[1:], (30, 20), install)
 
     def test_no_runs(self):
         out = timings.report("example/repo", 5, gh=lambda p: {"workflow_runs": []})
@@ -105,11 +106,12 @@ class TimingsTest(unittest.TestCase):
                 }
             ]
         }
-        gh = lambda p: (
-            {"workflow_runs": [{"id": 1}]}
-            if "page=1" in p
-            else (jobs if "/jobs" in p else {"workflow_runs": []})
-        )
+
+        def gh(p):
+            if "page=1" in p:
+                return {"workflow_runs": [{"id": 1}]}
+            return jobs if "/jobs" in p else {"workflow_runs": []}
+
         self.assertEqual(timings.collect("example/repo", 5, gh=gh), {})
 
     def test_skipped_jobs_are_ignored(self):
@@ -125,11 +127,12 @@ class TimingsTest(unittest.TestCase):
                 }
             ]
         }
-        gh = lambda p: (
-            {"workflow_runs": [{"id": 1}]}
-            if "page=1" in p
-            else (jobs if "/jobs" in p else {"workflow_runs": []})
-        )
+
+        def gh(p):
+            if "page=1" in p:
+                return {"workflow_runs": [{"id": 1}]}
+            return jobs if "/jobs" in p else {"workflow_runs": []}
+
         self.assertEqual(timings.collect("example/repo", 5, gh=gh), {})
 
     def test_cli_wired(self):

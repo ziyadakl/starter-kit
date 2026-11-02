@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Python checks: ruff lint, ruff format, pyright, pytest.
 # The linters run pinned through uvx, so the project's pyproject.toml needs no tool entries; a
-# [tool.ruff] or [tool.pyright] table there still wins. pytest runs in the project's own
-# environment (uv run) when it has a [project] table, and a project with no tests passes.
+# [tool.ruff] or [tool.pyright] table there still wins. Without a ruff config, the lint rules are
+# E,F,W,I,B,UP. pytest runs in the project's own environment (uv run) when it has a [project] table, and a project with no tests passes.
 set -euo pipefail
 
 RUFF_VERSION=0.17.3
@@ -20,8 +20,14 @@ elif [ -f uv.lock ]; then
   uv_run=(uv run --locked)
 fi
 
+# A project with its own ruff config keeps it; otherwise use the kit's rule set.
+ruff_rules=(--select "E,F,W,I,B,UP")
+if [ -f ruff.toml ] || [ -f .ruff.toml ] || grep -qE '^\[tool\.ruff([].]|$)' pyproject.toml 2>/dev/null; then
+  ruff_rules=()
+fi
+
 echo "-- lint (ruff $RUFF_VERSION)"
-uvx "ruff@$RUFF_VERSION" check .
+uvx "ruff@$RUFF_VERSION" check ${ruff_rules[@]+"${ruff_rules[@]}"} .
 
 echo "-- format (ruff $RUFF_VERSION)"
 uvx "ruff@$RUFF_VERSION" format --check .

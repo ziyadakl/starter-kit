@@ -44,10 +44,13 @@ class TestShellcheckCheck(Applied):
         c = run_check(self.project)
         self.assertNotEqual(c.returncode, 0, c.stdout)
         self.assertIn("bin/tool.sh", c.stdout + c.stderr)
+        self.assertIn("SC2086", c.stdout + c.stderr)
 
     def test_script_found_by_shebang_without_extension(self):
         self.add("bin/tool", BROKEN)
-        self.assertNotEqual(run_check(self.project).returncode, 0)
+        c = run_check(self.project)
+        self.assertNotEqual(c.returncode, 0)
+        self.assertIn("SC2086", c.stdout + c.stderr)
 
     def test_non_shell_file_is_ignored(self):
         self.add("notes.txt", "echo $unquoted\n")
