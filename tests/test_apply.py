@@ -144,6 +144,7 @@ class TestLayerMechanism(ApplyBase):
         self.assertIn("# starter-kit: layer setup steps", text)
 
     def test_ci_steps_without_marker_is_an_error(self):
+        (self.layers / "base/files/.github/workflows/check.yml").unlink()
         make_layers(self.layers, {"py": {"ci-steps.yml": "- run: x\n"}})
         r = run_kit("apply", "--layers-dir", self.layers, "--layer", "py", self.project)
         self.assertNotEqual(r.returncode, 0)

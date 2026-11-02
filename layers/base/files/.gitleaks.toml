@@ -1,0 +1,8 @@
+# Default gitleaks rules, plus one exception: the kit's own record holds file hashes,
+# which look like keys but are not.
+[extend]
+useDefault = true
+
+[allowlist]
+description = "starter-kit record of file hashes"
+paths = ['''^\.starter-kit\.json$''']

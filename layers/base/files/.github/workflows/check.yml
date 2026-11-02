@@ -1,0 +1,53 @@
+# The one CI check: runs scripts/check.sh, the same command as the local pre-push hook.
+# Pushes to main run it too, so the caches that pull requests restore stay filled.
+name: check
+
+on:
+  pull_request:
+    paths-ignore:
+      - '**/*.md'
+      - 'docs/**'
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      # starter-kit: layer setup steps
+      - name: Run the project check
+        run: bash scripts/check.sh
+      - name: Report cache hits and misses
+        if: always()
+        env:
+          STEPS: ${{ toJSON(steps) }}
+        run: |
+          printf '%s' "$STEPS" | jq -r '
+            to_entries[]
+            | select(.value.outputs["cache-hit"] != null)
+            | "cache: \(.key) \(if .value.outputs["cache-hit"] == "true" then "hit" else "miss" end)"
+          ' >> "$GITHUB_STEP_SUMMARY"
+
+  gitleaks:
+    name: No keys in the code (gitleaks)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: write  # gitleaks comments on the pull request when it finds a key
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
