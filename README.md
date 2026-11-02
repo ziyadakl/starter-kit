@@ -23,6 +23,8 @@ All are wired in `.claude/settings.json`. Each guard blocks with exit code 2 and
 
 The `.env` and merge guards need `python3` on the PATH; without it they do nothing.
 
+When a private repo runs out of GitHub Actions minutes, its checks never run, so the merge guard refuses every merge. That is on purpose: the owner merges by hand on GitHub until the minutes come back. A local `scripts/check.sh` pass does not count, because the agent could fake its result.
+
 #### Which files the config guard protects
 
 Each layer ships a list in `.claude/protect.d/<layer>.txt`, one pattern per line (`#` starts a comment). A pattern with no slash matches that file name in any folder; one with a slash matches the path from the project root, with `*` as a glob. A project is protected for exactly the layers it applied:
