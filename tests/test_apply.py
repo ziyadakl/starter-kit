@@ -239,3 +239,27 @@ class TestKitMeta(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestExistingProjectFiles(ApplyBase):
+    def test_differing_existing_file_is_refused_and_left_alone(self):
+        (self.project / "renovate.json").write_text('{"mine": true}\n')
+        r = run_kit("apply", self.project)
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("renovate.json", r.stdout + r.stderr)
+        self.assertEqual((self.project / "renovate.json").read_text(), '{"mine": true}\n')
+        self.assertFalse((self.project / ".starter-kit.json").exists())
+
+    def test_force_overwrites_the_differing_file(self):
+        (self.project / "renovate.json").write_text('{"mine": true}\n')
+        r = run_kit("apply", "--force", self.project)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertNotIn('"mine"', (self.project / "renovate.json").read_text())
+
+    def test_another_hooks_path_is_kept(self):
+        import subprocess
+
+        subprocess.run(["git", "config", "core.hooksPath", ".husky/_"], cwd=self.project, check=True)
+        r = run_kit("apply", self.project)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(git_config(self.project, "core.hooksPath"), ".husky/_")
