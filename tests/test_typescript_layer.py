@@ -833,13 +833,19 @@ class TestLintAdoptionDocs(unittest.TestCase):
             recipe.index(w)
             for w in (
                 "Apply the kit",
-                "mechanical",
+                "Mechanical commit",
+                "linter in fix mode",
+                "formatter in write mode",
+                "repair by hand",
                 LOWER_CAP_COMMAND,
                 "remaining error",
+                "push and open the pull request",
             )
         ]
         self.assertEqual(positions, sorted(positions))
         self.assertIn("void", recipe)
+        # The pre-push hook runs the full check, so a lint-red mechanical pull request could never be pushed.
+        self.assertIn("One pull request per project", recipe)
 
     def test_changelog_names_the_cap_check_under_0_3_0(self):
         section = self.changelog.split("## 0.2.0")[0]

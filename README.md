@@ -49,13 +49,13 @@ Two canaries keep a green result honest. Before the real run, `tsc` is run on a 
 
 **The cap check in CI.** A cap raised through the shell would get past the config guard, so `23-ts-cap-raise.sh` compares the cap with the one on the pull request's base branch (it fetches that branch itself from `GITHUB_BASE_REF`, so the normal shallow checkout is enough). The step fails when the cap is higher, or when the file or the cap was removed. A project file that is new in the pull request (the first adoption) passes, and outside a pull request (a local run, a push to main) the step skips. A raise therefore needs the owner to merge by hand, which the merge guard already requires for a failed check.
 
-**Adopting the kit in an existing project.** Do these in order, one project at a time:
+**Adopting the kit in an existing project.** One pull request per project, built in this order on one branch. The kit's pre-push hook and CI run the full check, so nothing can be pushed until step 5 is green:
 
-1. Apply the kit (`kit.py apply --layer typescript`). The lint step is red until step 4; do not push yet.
-2. Pull request 1, mechanical only: run the formatter in write mode and the linter in fix mode. Typecheck and tests must still pass. The owner merges it on green checks; there is nothing to read in 250 changed files.
+1. Apply the kit (`kit.py apply --layer typescript`).
+2. Mechanical commit: run the linter in fix mode, then the formatter in write mode (the fixer leaves code unformatted). Then run the typecheck and the tests, and repair by hand whatever the fixer or formatter broke: a fix can remove a type assertion the code needed, and a test that reads source text can fail on reformatted code. Commit this on its own, so the rest of the pull request reads apart from 250 reformatted files.
 3. Run `bash scripts/lint-cap.sh` to record the baseline. It writes `.oxlint-project.json` with the cap.
-4. Pull request 2: fix every remaining error. That covers the locked-rule hits (fix the real bugs; mark intentional fire-and-forget calls with `void`) and every other error. State the warning cap in the pull request, so the owner sees how much old debt the project carries.
-5. The check is green. From here on, lower the cap with the same command whenever the lint step says the count is below it.
+4. Fix every remaining error. That covers the locked-rule hits (fix the real bugs; mark intentional fire-and-forget calls with `void`) and every other error.
+5. The check is green: push and open the pull request. State the warning cap in it, so the owner sees how much old debt the project carries. From here on, lower the cap with the same command whenever the lint step says the count is below it.
 
 `apply` ships `.oxlintrc.json`, `.oxlint-kit.json`, `.oxfmtrc.json`, `scripts/ts-common.sh`, `scripts/ts-pm.sh` and `.claude/protect.d/typescript.txt`. The lint rules are a copy of a finished monorepo config: oxlint's categories off, about a hundred named rules (type-aware ones included), and the React hooks rules on `.tsx` and `.jsx` files only. Like every kit file, one that already exists with other content stops `apply` before anything is written (use `--force` to overwrite). A project that already uses eslint or prettier keeps both untouched; the kit's check does not run them, and `oxfmt` prints with Prettier's defaults at 80 columns, so set the same options in `.oxfmtrc.json` by hand if your Prettier config differs. Monorepos with a package per folder are not covered.
 
