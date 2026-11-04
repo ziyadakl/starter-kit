@@ -1,0 +1,5 @@
+# TypeScript layer: lint and format configuration (see .claude/hooks/config-guard.sh).
+# tsconfig.json and package.json are not listed: they also hold compiler paths, scripts and dependencies, which
+# Claude has to edit. A weakened "strict" or a skipped file in tsconfig.json is not caught.
+.oxlintrc.json
+.oxfmtrc.json

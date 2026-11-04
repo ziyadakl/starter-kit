@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.3.0
+
+- New `typescript` layer for single-package projects (a Next.js app, a Cloudflare Worker, plain TypeScript): `scripts/check.d/20-typescript.sh` runs typecheck (`tsc`, TypeScript 7), lint (oxlint with type-aware rules), format check (oxfmt) and tests (the project's `test` script, else vitest when it is configured). The package manager comes from the lockfile (pnpm, npm, yarn or bun). A tool the project has installed is used as it is; otherwise the kit's pinned version runs through the manager's one-off runner (`npx -y`, `pnpm dlx`, `yarn dlx`, `bunx`), so `package.json` needs no edit and a kit update changes the versions in one place. The layer ships `.oxlintrc.json`, `.oxfmtrc.json` and `.nvmrc` (22), `scripts/ts-pm.sh` and the CI setup steps; `apply` refuses to overwrite one of these files that already exists with other content, as for every kit file. The config guard protects both oxc configs. A project's eslint and prettier setup is left alone and not run.
+- TypeScript canaries: the typecheck and the linter each run on a planted mistake first and the check fails if they do not report it, and a typecheck, lint or format run that looked at zero files fails.
+- `scripts/check.sh` now runs every `check.d` script even after one fails and ends with one `CHECK FAILED: <script>` line per failure (still `CHECK PASSED` on success). Order is the script names, so give cheap checks low numbers (`10-` seconds, `20-` language tools, `30-` and up slow suites). The TypeScript check does the same across its own steps.
+- The `check.yml` workflow skips draft pull requests (pushes to main are unaffected) and runs when a draft is marked ready (`ready_for_review`). The key scan in `gitleaks.yml` still runs on drafts.
+- TypeScript CI setup: Node from `.nvmrc`, no package-manager cache (a restore took longer than a cold install), dependencies installed from the lockfile without changing it.
+- The pre-push hook was checked from a linked git worktree and runs the worktree's own check; a test now pins it.
+
 ## 0.2.0
 
 - The `.env` guard's folder walk skips build output (`target`, `.next`, `dist`, `build`, …) and stops descending past 20 levels instead of blocking, so content searches in deep Java, Rust or Next.js trees with no `.env` are allowed.

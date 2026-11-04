@@ -1,0 +1,42 @@
+// The lint rules of the starter kit's typescript layer, run by scripts/check.d/20-typescript.sh.
+//
+// Every rule in oxlint's "correctness" category is an error, plus the type-aware rules below that catch the
+// mistakes a type checker alone lets through (a promise nobody awaits, an async function handed to a
+// callback that ignores it). The check runs oxlint from the repo root with --type-aware, so the type-aware
+// rules are on; run from a subfolder, oxlint skips this file.
+//
+// Change a rule by editing this file by hand (Claude's config guard refuses to). An existing .oxlintrc.json
+// in your project is never overwritten by `kit.py apply`.
+{
+  "plugins": ["typescript", "import"],
+  "categories": { "correctness": "error" },
+  "options": { "typeAware": true },
+  "ignorePatterns": [
+    "**/node_modules/**",
+    "**/dist/**",
+    "**/build/**",
+    "**/coverage/**",
+    "**/.next/**",
+    "**/.open-next/**",
+    "**/.wrangler/**",
+    "**/.turbo/**"
+  ],
+  "rules": {
+    "typescript/await-thenable": "error",
+    "typescript/no-floating-promises": "error",
+    "typescript/no-for-in-array": "error",
+    "typescript/no-implied-eval": "error",
+    "typescript/no-misused-promises": "error",
+    "typescript/only-throw-error": "error",
+    "typescript/no-unsafe-function-type": "error",
+    "typescript/no-non-null-asserted-optional-chain": "error"
+  },
+  "overrides": [
+    {
+      // Asserting on a mock's method (expect(obj.method).toHaveBeenCalled()) is the normal way to write a test;
+      // unbound-method flagged 222 such lines in one real project and nothing else.
+      "files": ["**/*.test.*", "**/*.spec.*", "**/__tests__/**"],
+      "rules": { "typescript/unbound-method": "off" }
+    }
+  ]
+}

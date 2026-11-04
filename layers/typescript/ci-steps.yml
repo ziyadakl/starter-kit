@@ -1,0 +1,12 @@
+# Node comes from .nvmrc. No package-manager cache, on purpose: a restore unpacked a few hundred MB and took
+# longer than a cold install did (37 s with the cache, 26 s without, over 36 CI jobs), and a cache miss then spent
+# 21 s saving a copy only that pull request could use.
+- uses: actions/setup-node@v6
+  with:
+    node-version-file: .nvmrc
+- name: Enable pnpm and yarn (corepack, version from package.json packageManager)
+  run: corepack enable
+- uses: oven-sh/setup-bun@v2
+  if: hashFiles('bun.lock', 'bun.lockb') != ''
+- name: Install dependencies (frozen lockfile)
+  run: bash scripts/ts-pm.sh install
