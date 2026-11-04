@@ -21,22 +21,28 @@ Shared starter kit: checks, hooks, CI and guards per project type
 
 ### TypeScript layer
 
-For a single-package project (a Next.js app, a Cloudflare Worker, plain TypeScript) with a lockfile at the repo root. Install the dependencies first; `scripts/check.d/20-typescript.sh` then runs, in this order and without stopping at the first failure:
+For a single-package project (a Next.js app, a Cloudflare Worker, plain TypeScript) with a lockfile at the repo root. Install the dependencies first. The layer adds one `check.d` script per step, in this order; each runs even when an earlier one failed, and `check.sh` lists every failed one:
 
-| Step | Command | Fails when |
-| --- | --- | --- |
-| typecheck | `tsc --noEmit` (TypeScript 7.0.2) | any type error; no `tsconfig.json`; the config reaches zero source files |
-| lint | `oxlint --type-aware` (oxlint 1.90.0, oxlint-tsgolint 7.0.2005) | any error-level finding; zero files linted |
-| format | `oxfmt --check` on `.ts .tsx .js .jsx .mjs .cjs .mts .cts` (oxfmt 0.75.0) | any file that would change; zero files checked |
-| tests | the project's `test` script, else `vitest run` when vitest is configured | a failing test. No test script (or npm's placeholder) and no vitest: skipped with a line saying so |
+| Script | Step | Command | Fails when |
+| --- | --- | --- | --- |
+| `20-ts-typecheck.sh` | typecheck | `tsc --noEmit` with TypeScript 7 (see below) | any type error; no `tsconfig.json`; a `tsconfig.json` that does not parse (tsc's own error is shown); the config reaches zero source files |
+| `21-ts-lint.sh` | lint | `oxlint --type-aware` (oxlint 1.90.0, oxlint-tsgolint 7.0.2005) | any error-level finding; zero files linted |
+| `22-ts-format.sh` | format | `oxfmt --check` on `.ts .tsx .js .jsx .mjs .cjs .mts .cts` (oxfmt 0.75.0) | any file that would change; zero files checked |
+| `30-ts-tests.sh` | tests | the project's `test` script, else `vitest run` when vitest is configured | a failing test. No test script (or npm's placeholder) and no vitest: skipped with a line saying so |
 
-The package manager is read from the lockfile: `pnpm-lock.yaml`, `package-lock.json`, `yarn.lock`, `bun.lock` (first match wins, in that order). A tool the project already has in `node_modules/.bin` is used as it is. Otherwise the kit runs its pinned version through the manager's one-off runner (`pnpm dlx`, `npx -y`, `yarn dlx`, `bunx`; yarn 1 and multi-package runs under bun use `npx`), so `package.json` stays untouched and the versions live in the one script. The pinned versions are the ones listed in the table; update them there.
+The steps share `scripts/ts-common.sh`, which holds the pinned versions (Renovate reads them) and the helpers.
 
-Two canaries keep a green result honest. Before the real run, `tsc` is run on a planted type error and `oxlint` on a planted floating promise and `debugger` statement, under the project's own `.oxlintrc.json`; the check fails with `CANARY FAILED` unless each reports them (a rule switched off, or type information not reaching the linter, shows up here). Each real run must also have looked at more than zero files.
+**Which TypeScript runs.** Always TypeScript 7, and the first line of the typecheck names it. The project's `node_modules/.bin/tsc` is used only when `tsc --version` reports 7 or newer (so is a `node_modules/typescript7` alias). Any older project `tsc` (TypeScript 5 or 6) is not used, and the pinned TypeScript 7.0.2 runs through the package manager's one-off runner instead. A `tsconfig.json` with `references` (the Vite layout, `"files": []`) is checked with `tsc -b --noEmit`, which builds every referenced project; that may write `.tsbuildinfo` files where the referenced tsconfigs say (Vite: `node_modules/.tmp`).
 
-`apply` ships `.oxlintrc.json`, `.oxfmtrc.json`, `.nvmrc` (`22`), `scripts/ts-pm.sh` and `.claude/protect.d/typescript.txt`. Like every kit file, one that already exists with other content stops `apply` before anything is written (use `--force` to overwrite). A project that already uses eslint or prettier keeps both untouched; the kit's check does not run them, and `oxfmt` prints with Prettier's defaults at 80 columns, so set the same options in `.oxfmtrc.json` by hand if your Prettier config differs. Monorepos with a package per folder are not covered.
+**Which oxlint and oxfmt run.** The package manager is read from the lockfile: `pnpm-lock.yaml`, `package-lock.json`, `yarn.lock`, `bun.lock` or the older binary `bun.lockb` (first match wins, in that order). A tool the project already has in `node_modules/.bin` is used as it is, provided every package the kit pins for it is installed too (oxlint counts only with oxlint-tsgolint next to it). Otherwise the kit runs its pinned version through the manager's one-off runner (`pnpm dlx`, `npx -y`, `yarn dlx`, `bunx`; yarn 1 and multi-package runs under bun use `npx`), so `package.json` stays untouched and the versions live in the one helper file.
 
-CI: Node comes from `.nvmrc` (setup-node), pnpm and yarn through corepack (`packageManager` in `package.json` picks the version), bun through setup-bun when the project has a bun lockfile, then `bash scripts/ts-pm.sh install` installs from the lockfile without changing it. There is no package-manager cache: restoring it was slower than a cold install.
+Two canaries keep a green result honest. Before the real run, `tsc` is run on a planted type error, and `oxlint` on a planted floating promise and `debugger` statement, under the project's own `.oxlintrc.json`; the check fails with `CANARY FAILED` unless each is reported, and the lint ones must be reported as errors, not warnings (a rule switched off or left at warning, or type information not reaching the linter, shows up here). Each real run must also have looked at more than zero files, and a count that cannot be read fails the step too.
+
+`apply` ships `.oxlintrc.json`, `.oxfmtrc.json`, `scripts/ts-common.sh`, `scripts/ts-pm.sh` and `.claude/protect.d/typescript.txt`. The lint rules are a copy of a finished monorepo config: oxlint's categories off, about a hundred named rules (type-aware ones included), and the React hooks rules on `.tsx` and `.jsx` files only. Like every kit file, one that already exists with other content stops `apply` before anything is written (use `--force` to overwrite). A project that already uses eslint or prettier keeps both untouched; the kit's check does not run them, and `oxfmt` prints with Prettier's defaults at 80 columns, so set the same options in `.oxfmtrc.json` by hand if your Prettier config differs. Monorepos with a package per folder are not covered.
+
+CI: Node comes from the project's `.nvmrc` if it has one, else its `.node-version`, else Node 22 (setup-node, three steps gated on which file exists). pnpm and yarn come through corepack (`packageManager` in `package.json` picks the version), bun through setup-bun when the project has `bun.lock` or `bun.lockb`, then `bash scripts/ts-pm.sh install` installs from the lockfile without changing it. There is no package-manager cache: the one measurement (a monorepo with a ~395 MB pnpm store) had a restore slower than a cold install; a small project was not measured. The setup actions are pinned to commit SHAs.
+
+Open pull requests as drafts while you work and mark them ready once: the `check` job skips drafts, so CI does not run on every push while you work and runs when you mark the pull request ready.
 
 ### Claude Code guards (base layer)
 

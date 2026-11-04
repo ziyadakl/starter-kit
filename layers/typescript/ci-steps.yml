@@ -1,12 +1,27 @@
-# Node comes from .nvmrc. No package-manager cache, on purpose: a restore unpacked a few hundred MB and took
-# longer than a cold install did (37 s with the cache, 26 s without, over 36 CI jobs), and a cache miss then spent
-# 21 s saving a copy only that pull request could use.
-- uses: actions/setup-node@v6
+# Node version: the project's .nvmrc if it has one, else its .node-version, else Node 22. One setup-node step runs.
+# No package-manager cache, on purpose (package-manager-cache: false: setup-node turns the cache on by itself when
+# package.json has a "packageManager" field). The evidence is thin and from one place: in one monorepo with a
+# ~395 MB pnpm store, a cache restore (37 s) was slower than a cold install (26 s) over 36 CI jobs, and a miss then
+# spent 21 s saving a copy only that pull request could use. A small single-package project was not measured;
+# if you measure one and a cache wins, add it to this file by hand.
+- uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38  # v6.5.0
+  if: hashFiles('.nvmrc') != ''
   with:
     node-version-file: .nvmrc
+    package-manager-cache: false
+- uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38  # v6.5.0
+  if: hashFiles('.nvmrc') == '' && hashFiles('.node-version') != ''
+  with:
+    node-version-file: .node-version
+    package-manager-cache: false
+- uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38  # v6.5.0
+  if: hashFiles('.nvmrc') == '' && hashFiles('.node-version') == ''
+  with:
+    node-version: 22
+    package-manager-cache: false
 - name: Enable pnpm and yarn (corepack, version from package.json packageManager)
   run: corepack enable
-- uses: oven-sh/setup-bun@v2
+- uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6  # v2.2.0
   if: hashFiles('bun.lock', 'bun.lockb') != ''
 - name: Install dependencies (frozen lockfile)
   run: bash scripts/ts-pm.sh install

@@ -28,14 +28,18 @@ def new_project():
     return tmp, path
 
 
+def clean_env():
+    """The caller's environment without GIT_* variables, so a test's git commands act on the test's own repo."""
+    return {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+
+
 def run_check(project):
-    env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
     return subprocess.run(
         ["bash", "scripts/check.sh"],
         capture_output=True,
         text=True,
         cwd=project,
-        env=env,
+        env=clean_env(),
         check=False,
     )
 

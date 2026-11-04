@@ -6,12 +6,13 @@ kit's pinned tools through npx and is skipped where npx is missing.
 
 import json
 import os
+import re
 import shutil
 import stat
 import subprocess
 import unittest
 
-from tests.helpers import new_project, run_kit
+from tests.helpers import KIT_ROOT, clean_env, new_project, run_kit
 
 PACKAGE_JSON = {"name": "demo", "version": "1.0.0", "private": True}
 TSCONFIG = {
@@ -27,13 +28,24 @@ TSCONFIG = {
 }
 
 # Fake tools: each reads FAKE_* from the environment so a test can make one of them misbehave.
+# FAKE_TSC modes: ok, typeerror, blind (canary unseen), zero (no source files), parseerror (broken tsconfig),
+# refs (tsconfig lists references, so the check must build them with -b), refs-typeerror.
+# FAKE_TSC_VERSION is what `--version` prints.
 FAKE_TSC = r"""#!/usr/bin/env bash
 mode="${FAKE_TSC:-ok}"
 case " $* " in
-  *" --version "*) echo "Version 7.0.2"; exit 0 ;;
+  *" --version "*) echo "Version ${FAKE_TSC_VERSION:-7.0.2}"; exit 0 ;;
   *" --listFilesOnly "*)
+    [ "$mode" = parseerror ] && { echo "tsconfig.json(1,2): error TS1136: Property assignment expected."; exit 1; }
     [ "$mode" = zero ] && exit 0
     echo "$PWD/src/a.ts"; exit 0 ;;
+  *" --showConfig "*)
+    case "$mode" in refs*) echo '{ "files": [], "references": [{ "path": "./tsconfig.app.json" }] }' ;; *) echo '{ "files": ["./src/a.ts"] }' ;; esac
+    exit 0 ;;
+  *" -b "*)
+    echo "tsc -b ran"
+    [ "$mode" = refs-typeerror ] && { echo "src/a.ts(1,7): error TS2322: planted"; exit 2; }
+    exit 0 ;;
   *" -p "*)
     [ "$mode" = blind ] && exit 0
     echo "canary.ts(1,7): error TS2322: Type 'string' is not assignable to type 'number'."; exit 2 ;;
@@ -41,27 +53,38 @@ esac
 if [ "$mode" = typeerror ]; then echo "src/a.ts(1,7): error TS2322: planted"; exit 2; fi
 exit 0
 """
+# FAKE_OXLINT modes: ok, blind (canary finds nothing), norule (canary misses one rule), warn (canary finds both as
+# warnings), zero (lints no files), lint (a finding in the project), unreadable (no summary line).
 FAKE_OXLINT = r"""#!/usr/bin/env bash
 mode="${FAKE_OXLINT:-ok}"
+summary() { echo "Found 0 warnings and $1 errors."; echo "Finished in 1ms on ${2:-1} file with 90 rules using 1 threads."; }
 for a in "$@"; do
   if [ -f "$a/canary.ts" ]; then
+    sev=Error
+    [ "$mode" = warn ] && sev=Warning
     case "$mode" in
-      blind) echo "Found 0 warnings and 0 errors."; echo "Finished in 1ms on 1 file with 90 rules using 1 threads."; exit 0 ;;
-      norule) echo "typescript(no-floating-promises): planted"; echo "Found 0 warnings and 1 errors."; echo "Finished in 1ms on 1 file with 90 rules using 1 threads."; exit 1 ;;
+      blind) summary 0; exit 0 ;;
+      norule) echo "canary.ts:4:1: planted [$sev/typescript(no-floating-promises)]"; summary 1; exit 1 ;;
     esac
-    echo "eslint(no-debugger): planted"; echo "typescript(no-floating-promises): planted"
-    echo "Found 0 warnings and 2 errors."; echo "Finished in 1ms on 1 file with 90 rules using 1 threads."; exit 1
+    echo "canary.ts:5:1: planted [$sev/eslint(no-debugger)]"
+    echo "canary.ts:4:1: planted [$sev/typescript(no-floating-promises)]"
+    summary 2
+    [ "$mode" = warn ] && exit 0
+    exit 1
   fi
 done
 case "$mode" in
-  zero) echo "Found 0 warnings and 0 errors."; echo "Finished in 1ms on 0 files with 90 rules using 1 threads."; exit 0 ;;
-  lint) echo "src/a.ts:1:1: error eslint(no-debugger): planted"; echo "Found 0 warnings and 1 errors."; echo "Finished in 1ms on 1 file with 90 rules using 1 threads."; exit 1 ;;
+  zero) summary 0 0; exit 0 ;;
+  unreadable) echo "all fine"; exit 0 ;;
+  lint) echo "src/a.ts:1:1: planted [Error/eslint(no-debugger)]"; summary 1; exit 1 ;;
 esac
-echo "Found 0 warnings and 0 errors."; echo "Finished in 1ms on 1 file with 90 rules using 1 threads."; exit 0
+summary 0
+exit 0
 """
 FAKE_OXFMT = r"""#!/usr/bin/env bash
 case "${FAKE_OXFMT:-ok}" in
   zero) echo "Finished in 1ms on 0 files using 1 threads."; exit 0 ;;
+  unreadable) echo "All matched files use the correct format."; exit 0 ;;
   bad) echo "src/a.ts"; echo "Format issues found in above 1 files."; exit 1 ;;
 esac
 echo "All matched files use the correct format."; echo "Finished in 1ms on 1 files using 1 threads."; exit 0
@@ -80,7 +103,7 @@ def write_exec(path, text):
 
 
 def run_script(project, *cmd, env=None, path_prepend=None):
-    e = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+    e = clean_env()
     e.update(env or {})
     if path_prepend:
         e["PATH"] = f"{path_prepend}{os.pathsep}{e['PATH']}"
@@ -107,13 +130,14 @@ class TypeScriptProject(unittest.TestCase):
         (p / "package-lock.json").write_text("{}\n")
         (p / "tsconfig.json").write_text(json.dumps(TSCONFIG))
         (p / "src").mkdir()
-        (p / "src/a.ts").write_text("export const a: number = 1;\n")
+        (p / "src/a.ts").write_text("export const a = 1;\n")
         (p / ".gitignore").write_text("node_modules/\n")
         if self.fake_tools:
             bin_dir = p / "node_modules/.bin"
             write_exec(bin_dir / "tsc", FAKE_TSC)
             write_exec(bin_dir / "oxlint", FAKE_OXLINT)
-            (p / "node_modules/oxlint-tsgolint").mkdir()
+            for package in ("oxlint", "oxlint-tsgolint", "oxfmt"):
+                (p / "node_modules" / package).mkdir()
             write_exec(bin_dir / "oxfmt", FAKE_OXFMT)
         else:
             (p / "node_modules").mkdir()
@@ -128,15 +152,20 @@ class TypeScriptProject(unittest.TestCase):
 class TestApply(TypeScriptProject):
     def test_layer_writes_its_files(self):
         for rel in (
-            "scripts/check.d/20-typescript.sh",
+            "scripts/check.d/20-ts-typecheck.sh",
+            "scripts/check.d/21-ts-lint.sh",
+            "scripts/check.d/22-ts-format.sh",
+            "scripts/check.d/30-ts-tests.sh",
+            "scripts/ts-common.sh",
             "scripts/ts-pm.sh",
             ".oxlintrc.json",
             ".oxfmtrc.json",
-            ".nvmrc",
             ".claude/protect.d/typescript.txt",
         ):
             self.assertTrue((self.project / rel).is_file(), rel)
-        self.assertEqual((self.project / ".nvmrc").read_text().strip(), "22")
+        # The kit no longer ships a Node version file: CI reads the project's own, else uses Node 22.
+        self.assertFalse((self.project / ".nvmrc").exists())
+        self.assertFalse((self.project / "scripts/check.d/20-typescript.sh").exists())
         record = json.loads((self.project / ".starter-kit.json").read_text())
         self.assertIn("typescript", record["layers"])
         self.assertIn(".oxlintrc.json", record["files"])
@@ -158,13 +187,10 @@ class TestApply(TypeScriptProject):
         tmp, p = new_project()
         self.addCleanup(tmp.cleanup)
         (p / ".oxlintrc.json").write_text('{"rules": {}}\n')
-        (p / ".nvmrc").write_text("20\n")
         r = run_kit("apply", "--layer", "typescript", p)
         self.assertNotEqual(r.returncode, 0)
         self.assertIn(".oxlintrc.json", r.stderr)
-        self.assertIn(".nvmrc", r.stderr)
         self.assertEqual((p / ".oxlintrc.json").read_text(), '{"rules": {}}\n')
-        self.assertEqual((p / ".nvmrc").read_text(), "20\n")
         self.assertFalse((p / ".oxfmtrc.json").exists())  # nothing was written
 
     def test_existing_identical_config_is_accepted(self):
@@ -189,18 +215,69 @@ class TestApply(TypeScriptProject):
             )
             self.assertEqual(r.returncode, 2, name + r.stderr)
 
-    def test_shipped_configs_are_valid_json_with_comments_stripped(self):
-        for name in (".oxlintrc.json", ".oxfmtrc.json"):
-            lines = (self.project / name).read_text().splitlines()
-            body = "\n".join(ln for ln in lines if not ln.lstrip().startswith("//"))
-            cfg = json.loads(body)
-            if name == ".oxlintrc.json":
-                off = [
-                    o["files"]
-                    for o in cfg["overrides"]
-                    if o["rules"].get("typescript/unbound-method") == "off"
-                ]
-                self.assertTrue(any("**/*.test.*" in f for f in off))
+    def config(self, name):
+        """A shipped config as a dict: the // comment lines stripped, the rest parsed as JSON."""
+        lines = (self.project / name).read_text().splitlines()
+        return json.loads(
+            "\n".join(ln for ln in lines if not ln.lstrip().startswith("//"))
+        )
+
+    def test_lint_config_is_the_monorepos_finished_rule_set(self):
+        cfg = self.config(".oxlintrc.json")
+        self.assertEqual(cfg["categories"], {"correctness": "off"})
+        self.assertTrue(cfg["options"]["typeAware"])
+        self.assertEqual(cfg["plugins"], ["typescript", "import"])
+        rules = cfg["rules"]
+        self.assertGreaterEqual(len(rules), 100)
+        for rule in (
+            "typescript/no-explicit-any",
+            "typescript/no-floating-promises",
+            "typescript/no-unsafe-assignment",
+            "typescript/unbound-method",
+            "typescript/no-unnecessary-condition",
+            "no-debugger",
+            "prefer-const",
+            "import/consistent-type-specifier-style",
+        ):
+            self.assertIn(rule, rules)
+        # The React overrides are scoped to component files and carry the hooks rules.
+        react = [o for o in cfg["overrides"] if "react" in o.get("plugins", [])]
+        self.assertTrue(react)
+        self.assertEqual(sorted(react[0]["files"]), ["**/*.jsx", "**/*.tsx"])
+        self.assertEqual(react[0]["rules"]["react/rules-of-hooks"], "error")
+
+    def test_lint_config_holds_nothing_specific_to_the_monorepo(self):
+        text = (self.project / ".oxlintrc.json").read_text()
+        for word in (
+            "apps/",
+            "packages/",
+            "acme",
+            "deals",
+            "supabase",
+            "tracker",
+            "nextjs/",
+        ):
+            self.assertNotIn(word, text)
+        cfg = self.config(".oxlintrc.json")
+        # The unbound-method override for tests stays (it is the kit's own, measured on a real project).
+        off = [
+            o["files"]
+            for o in cfg["overrides"]
+            if o["rules"].get("typescript/unbound-method") == "off"
+        ]
+        self.assertTrue(any("**/*.test.*" in f for f in off))
+
+    def test_lint_and_format_share_one_ignore_list(self):
+        lint = self.config(".oxlintrc.json")["ignorePatterns"]
+        fmt = self.config(".oxfmtrc.json")["ignorePatterns"]
+        self.assertEqual(lint, fmt)
+        for name in (".wrangler", ".open-next", ".turbo", ".next", "node_modules"):
+            self.assertTrue(any(name in pat for pat in lint), name)
+
+    def test_never_overwritten_comment_matches_apply(self):
+        text = (self.project / ".oxlintrc.json").read_text()
+        self.assertNotIn("never overwritten", text)
+        self.assertIn("--force", text)
 
 
 class TestPackageManagerDetection(unittest.TestCase):
@@ -274,7 +351,7 @@ class TestPackageManagerDetection(unittest.TestCase):
         shim = self.project / "shims"
         for pm in ("pnpm", "npx", "yarn", "bunx"):
             write_exec(shim / pm, '#!/usr/bin/env bash\necho "$(basename "$0") $*"\n')
-        script = 'source scripts/ts-pm.sh; PM=$(ts_detect_pm); ts_oneoff "$PM" "a@1 b@2" tool --x'
+        script = 'source scripts/ts-pm.sh; PM=$(ts_detect_pm); ts_oneoff "$PM" tool a@1 b@2 -- --x'
         cases = [
             (("pnpm-lock.yaml",), "pnpm --package=a@1 --package=b@2 dlx tool --x"),
             (("package-lock.json",), "npx -y -p a@1 -p b@2 tool --x"),
@@ -292,7 +369,7 @@ class TestPackageManagerDetection(unittest.TestCase):
             self.project,
             "bash",
             "-c",
-            'source scripts/ts-pm.sh; ts_oneoff bun "a@1" tool',
+            "source scripts/ts-pm.sh; ts_oneoff bun tool a@1 --",
             path_prepend=shim,
         )
         self.assertEqual(r.stdout.strip(), "bunx -p a@1 tool")
@@ -301,7 +378,7 @@ class TestPackageManagerDetection(unittest.TestCase):
             self.project,
             "bash",
             "-c",
-            'source scripts/ts-pm.sh; ts_oneoff yarn "a@1 b@2" tool',
+            "source scripts/ts-pm.sh; ts_oneoff yarn tool a@1 b@2 --",
             path_prepend=shim,
         )
         self.assertEqual(r.stdout.strip(), "yarn dlx -p a@1 -p b@2 tool")
@@ -321,13 +398,15 @@ class TestTypeScriptCheck(TypeScriptProject):
         self.assertIn("TS2322", out)
         self.assertIn("no-debugger", out)  # lint ran after typecheck failed
         self.assertIn("-- format", out)
-        self.assertIn("CHECK FAILED: scripts/check.d/20-typescript.sh", out)
-        self.assertRegex(out, r"failed: typecheck, lint")
+        self.assertIn("CHECK FAILED: scripts/check.d/20-ts-typecheck.sh", out)
+        self.assertIn("CHECK FAILED: scripts/check.d/21-ts-lint.sh", out)
+        self.assertNotIn("CHECK FAILED: scripts/check.d/22-ts-format.sh", out)
 
     def test_format_violation_fails(self):
         c, out = self.check(FAKE_OXFMT="bad")
         self.assertNotEqual(c.returncode, 0, out)
         self.assertIn("Format issues found", out)
+        self.assertIn("CHECK FAILED: scripts/check.d/22-ts-format.sh", out)
 
     def test_test_script_runs_through_the_package_manager(self):
         shim = self.project / "shims"
@@ -398,6 +477,40 @@ class TestCanaries(TypeScriptProject):
         self.assertNotEqual(c.returncode, 0, out)
         self.assertIn("CANARY FAILED", out)
 
+    def test_lint_canary_fails_when_the_planted_findings_are_only_warnings(self):
+        c, out = self.check(FAKE_OXLINT="warn")
+        self.assertNotEqual(c.returncode, 0, out)
+        self.assertIn("CANARY FAILED", out)
+        self.assertIn("error", out)
+
+    def test_lint_fails_when_the_file_count_cannot_be_read(self):
+        c, out = self.check(FAKE_OXLINT="unreadable")
+        self.assertNotEqual(c.returncode, 0, out)
+        self.assertIn("cannot be trusted", out)
+
+    def test_format_fails_when_the_file_count_cannot_be_read(self):
+        c, out = self.check(FAKE_OXFMT="unreadable")
+        self.assertNotEqual(c.returncode, 0, out)
+        self.assertIn("cannot be trusted", out)
+
+    def test_tsconfig_parse_error_is_reported_as_that_error(self):
+        c, out = self.check(FAKE_TSC="parseerror")
+        self.assertNotEqual(c.returncode, 0, out)
+        self.assertIn("TS1136", out)
+        self.assertNotIn("zero source files", out)
+
+    def test_tsconfig_with_references_is_built_with_tsc_b(self):
+        c, out = self.check(FAKE_TSC="refs")
+        self.assertEqual(c.returncode, 0, out)
+        self.assertIn("tsc -b ran", out)
+        self.assertNotIn("zero source files", out)
+
+    def test_type_error_in_a_referenced_project_fails(self):
+        c, out = self.check(FAKE_TSC="refs-typeerror")
+        self.assertNotEqual(c.returncode, 0, out)
+        self.assertIn("TS2322", out)
+        self.assertIn("CHECK FAILED: scripts/check.d/20-ts-typecheck.sh", out)
+
     def test_lint_fails_when_it_checked_zero_files(self):
         c, out = self.check(FAKE_OXLINT="zero")
         self.assertNotEqual(c.returncode, 0, out)
@@ -420,12 +533,46 @@ class TestWorkflow(TypeScriptProject):
         self.text = (self.project / ".github/workflows/check.yml").read_text()
         self.check_job = self.text.split("  gitleaks:")[0]
 
-    def test_node_comes_from_nvmrc_with_no_package_manager_cache(self):
-        self.assertIn("actions/setup-node@", self.text)
-        self.assertIn("node-version-file: .nvmrc", self.text)
+    def test_node_version_comes_from_nvmrc_then_node_version_then_22(self):
+        steps = re.split(r"(?m)^      - ", self.text)
+        node_steps = [st for st in steps if "actions/setup-node@" in st]
+        self.assertEqual(len(node_steps), 3, node_steps)
+        by_file = {}
+        for st in node_steps:
+            for key in (
+                "node-version-file: .nvmrc",
+                "node-version-file: .node-version",
+                "node-version: 22",
+            ):
+                if key in st:
+                    by_file[key] = st
+        self.assertEqual(len(by_file), 3)
+        self.assertIn("hashFiles('.nvmrc') != ''", by_file["node-version-file: .nvmrc"])
+        node_version = by_file["node-version-file: .node-version"]
+        self.assertIn("hashFiles('.nvmrc') == ''", node_version)
+        self.assertIn("hashFiles('.node-version') != ''", node_version)
+        fallback = by_file["node-version: 22"]
+        self.assertIn("hashFiles('.nvmrc') == ''", fallback)
+        self.assertIn("hashFiles('.node-version') == ''", fallback)
+
+    def test_every_setup_node_step_turns_the_package_manager_cache_off(self):
+        steps = [
+            st
+            for st in re.split(r"(?m)^      - ", self.text)
+            if "actions/setup-node@" in st
+        ]
+        self.assertEqual(len(steps), 3)
+        for st in steps:
+            self.assertIn("package-manager-cache: false", st)
         self.assertNotRegex(self.text, r"(?m)^\s+cache:")
-        self.assertNotIn("cache: pnpm", self.text)
-        self.assertNotIn("cache: npm", self.text)
+
+    def test_actions_are_pinned_to_commit_shas_with_a_version_comment(self):
+        for action in ("actions/setup-node", "oven-sh/setup-bun"):
+            uses = re.findall(rf"uses: {re.escape(action)}@(\S+)(.*)", self.text)
+            self.assertTrue(uses, action)
+            for ref, rest in uses:
+                self.assertRegex(ref, r"^[0-9a-f]{40}$", action)
+                self.assertRegex(rest, r"#\s*v\d+\.\d+\.\d+", action)
 
     def test_dependencies_install_from_the_lockfile_before_the_check(self):
         self.assertIn("bash scripts/ts-pm.sh install", self.text)
@@ -443,6 +590,188 @@ class TestWorkflow(TypeScriptProject):
 
     def test_corepack_is_enabled_for_pnpm_and_yarn(self):
         self.assertIn("corepack enable", self.text)
+
+
+# A stand-in for npx that logs its arguments and runs the fake tool the pinned package would have provided.
+STAND_IN_NPX = r"""#!/usr/bin/env bash
+echo "npx $*" >> "$NPX_LOG"
+args=("$@")
+i=0
+[ "${args[0]:-}" = -y ] && i=1
+while [ "${args[$i]:-}" = -p ]; do i=$((i + 2)); done
+exec "$FAKE_BIN_DIR/${args[$i]}" "${args[@]:$((i + 1))}"
+"""
+
+COMMON_SH = KIT_ROOT / "layers/typescript/files/scripts/ts-common.sh"
+
+
+def pinned_versions():
+    """{VARIABLE: version} read from the shared helper, so a Renovate bump does not break these tests."""
+    return dict(re.findall(r"(?m)^([A-Z_]+_VERSION)=(\S+)$", COMMON_SH.read_text()))
+
+
+class TestPinnedPath(TypeScriptProject):
+    """No tool installed in node_modules: every step goes through the package manager's one-off runner, with the pinned versions."""
+
+    fake_tools = False
+
+    def setUp(self):
+        super().setUp()
+        self.shims = self.project / "shims"
+        self.fakes = self.project / "fakes"
+        self.log = self.project / "npx.log"
+        write_exec(self.shims / "npx", STAND_IN_NPX)
+        write_exec(self.fakes / "tsc", FAKE_TSC)
+        write_exec(self.fakes / "oxlint", FAKE_OXLINT)
+        write_exec(self.fakes / "oxfmt", FAKE_OXFMT)
+        self.v = pinned_versions()
+
+    def run_check(self, **env):
+        env.update(NPX_LOG=str(self.log), FAKE_BIN_DIR=str(self.fakes))
+        c = run_script(
+            self.project, "bash", "scripts/check.sh", env=env, path_prepend=self.shims
+        )
+        calls = self.log.read_text().splitlines() if self.log.exists() else []
+        return c, c.stdout + c.stderr, calls
+
+    def install(self, rel, text):
+        write_exec(self.project / "node_modules" / rel, text)
+
+    def test_each_tool_runs_pinned_through_the_one_off_runner(self):
+        c, out, calls = self.run_check()
+        self.assertEqual(c.returncode, 0, out)
+        v = self.v
+        self.assertTrue(
+            any(
+                call.startswith(f"npx -y -p typescript@{v['TYPESCRIPT_VERSION']} tsc ")
+                for call in calls
+            ),
+            calls,
+        )
+        self.assertTrue(
+            any(
+                call.startswith(
+                    f"npx -y -p oxlint@{v['OXLINT_VERSION']} -p oxlint-tsgolint@{v['OXLINT_TSGOLINT_VERSION']} oxlint "
+                )
+                for call in calls
+            ),
+            calls,
+        )
+        self.assertTrue(
+            any(
+                call.startswith(f"npx -y -p oxfmt@{v['OXFMT_VERSION']} oxfmt ")
+                for call in calls
+            ),
+            calls,
+        )
+
+    def test_a_project_tsc_older_than_7_is_not_used(self):
+        self.install(".bin/tsc", FAKE_TSC)
+        c, out, calls = self.run_check(FAKE_TSC_VERSION="5.9.2")
+        self.assertEqual(c.returncode, 0, out)
+        self.assertTrue(
+            any(
+                f"typescript@{self.v['TYPESCRIPT_VERSION']} tsc" in call
+                for call in calls
+            ),
+            calls,
+        )
+        self.assertRegex(
+            out, rf"tsc {re.escape(self.v['TYPESCRIPT_VERSION'])} \(pinned"
+        )
+        self.assertIn("5.9.2", out)
+
+    def test_a_project_tsc_7_or_newer_is_used(self):
+        self.install(".bin/tsc", FAKE_TSC)
+        c, out, calls = self.run_check(FAKE_TSC_VERSION="7.1.0")
+        self.assertEqual(c.returncode, 0, out)
+        self.assertFalse(any(" tsc " in call for call in calls), calls)
+        self.assertRegex(out, r"tsc 7\.1\.0 \(the project's own")
+
+    def test_a_typescript7_alias_package_is_used_when_the_default_tsc_is_older(self):
+        self.install("typescript7/bin/tsc", FAKE_TSC)
+        (self.project / "node_modules/typescript7/package.json").write_text(
+            json.dumps({"name": "typescript", "version": "7.0.2"})
+        )
+        # .bin/tsc reports 5.x; the alias reports 7.0.2 (FAKE_TSC_VERSION default).
+        write_exec(
+            self.project / "node_modules/.bin/tsc",
+            FAKE_TSC.replace("${FAKE_TSC_VERSION:-7.0.2}", "5.9.2"),
+        )
+        c, out, calls = self.run_check()
+        self.assertEqual(c.returncode, 0, out)
+        self.assertFalse(any(" tsc " in call for call in calls), calls)
+        self.assertIn("typescript7", out)
+
+    def test_project_oxlint_is_used_only_with_its_type_aware_partner_installed(self):
+        self.install(".bin/oxlint", FAKE_OXLINT)
+        (self.project / "node_modules/oxlint").mkdir()
+        c, out, calls = self.run_check()
+        self.assertEqual(c.returncode, 0, out)
+        self.assertTrue(any("-p oxlint-tsgolint@" in call for call in calls), calls)
+        (self.project / "node_modules/oxlint-tsgolint").mkdir()
+        self.log.unlink()
+        c, out, calls = self.run_check()
+        self.assertEqual(c.returncode, 0, out)
+        self.assertFalse(any(" oxlint " in call for call in calls), calls)
+
+    def test_project_oxfmt_is_used_when_installed(self):
+        self.install(".bin/oxfmt", FAKE_OXFMT)
+        (self.project / "node_modules/oxfmt").mkdir()
+        c, out, calls = self.run_check()
+        self.assertEqual(c.returncode, 0, out)
+        self.assertFalse(any(" oxfmt " in call for call in calls), calls)
+
+
+class TestRenovate(unittest.TestCase):
+    def test_a_regex_manager_reads_every_version_pin_in_the_helper(self):
+        cfg = json.loads((KIT_ROOT / "layers/base/files/renovate.json").read_text())
+        managers = [m for m in cfg["customManagers"] if m["customType"] == "regex"]
+        self.assertEqual(len(managers), 1)
+        manager = managers[0]
+        patterns = [re.compile(p.strip("/")) for p in manager["managerFilePatterns"]]
+        for path in (
+            "scripts/ts-common.sh",
+            "layers/typescript/files/scripts/ts-common.sh",
+        ):
+            self.assertTrue(any(p.search(path) for p in patterns), path)
+        # Renovate's named groups are (?<name>...); Python spells them (?P<name>...).
+        regex = re.compile(
+            re.sub(r"\(\?<([A-Za-z])", r"(?P<\1", manager["matchStrings"][0])
+        )
+        found = {
+            m["depName"]: m["currentValue"]
+            for m in regex.finditer(COMMON_SH.read_text())
+        }
+        v = pinned_versions()
+        self.assertEqual(
+            found,
+            {
+                "typescript": v["TYPESCRIPT_VERSION"],
+                "oxlint": v["OXLINT_VERSION"],
+                "oxlint-tsgolint": v["OXLINT_TSGOLINT_VERSION"],
+                "oxfmt": v["OXFMT_VERSION"],
+            },
+        )
+        self.assertEqual(manager["datasourceTemplate"], "npm")
+
+
+class TestReadme(unittest.TestCase):
+    def setUp(self):
+        self.text = (KIT_ROOT / "README.md").read_text()
+        self.changelog = (KIT_ROOT / "CHANGELOG.md").read_text()
+
+    def test_documents_bun_lockb_node_version_files_and_drafts(self):
+        self.assertIn("bun.lockb", self.text)
+        self.assertIn(".node-version", self.text)
+        self.assertNotIn(".nvmrc` (`22`)", self.text)
+        self.assertRegex(self.text, r"(?i)drafts? while (you )?work")
+
+    def test_says_exactly_which_compiler_runs(self):
+        for text in (self.text, self.changelog):
+            self.assertIn("TypeScript 7", text)
+        self.assertIn("node_modules/.bin/tsc", self.text)
+        self.assertIn("tsc -b", self.text)
 
 
 @unittest.skipUnless(shutil.which("npx") and shutil.which("node"), "needs node and npx")
@@ -468,13 +797,45 @@ class TestRealTools(TypeScriptProject):
         self.assertIn("TS2322", out)
         self.assertIn("no-debugger", out)
         self.assertIn("src/fmt.ts", out)
-        self.assertIn("failed: typecheck, lint, format", out)
+        for script in ("20-ts-typecheck", "21-ts-lint", "22-ts-format"):
+            self.assertIn(f"CHECK FAILED: scripts/check.d/{script}.sh", out)
 
     def test_type_aware_rule_fires_through_the_one_off_runner(self):
         self.plant("src/p.ts", "async function f() {\n  return 1;\n}\nf();\n")
         c, out = self.check()
         self.assertNotEqual(c.returncode, 0, out)
         self.assertIn("no-floating-promises", out)
+
+    def test_the_pinned_typescript_7_runs_and_is_named(self):
+        c, out = self.check()
+        self.assertEqual(c.returncode, 0, out)
+        self.assertRegex(out, r"tsc 7\.\d+\.\d+ \(pinned")
+
+    def test_project_references_are_built_with_tsc_b(self):
+        (self.project / "tsconfig.json").write_text(
+            json.dumps({"files": [], "references": [{"path": "./tsconfig.app.json"}]})
+        )
+        app = dict(TSCONFIG)
+        app["compilerOptions"] = dict(
+            TSCONFIG["compilerOptions"],
+            composite=True,
+            tsBuildInfoFile="./node_modules/.tmp/app.tsbuildinfo",
+        )
+        (self.project / "tsconfig.app.json").write_text(json.dumps(app))
+        c, out = self.check()
+        self.assertEqual(c.returncode, 0, out)
+        self.plant("src/type.ts", 'export const t: number = "text";\n')
+        c, out = self.check()
+        self.assertNotEqual(c.returncode, 0, out)
+        self.assertIn("TS2322", out)
+        self.assertNotIn("zero source files", out)
+
+    def test_broken_tsconfig_is_reported_as_its_own_error(self):
+        self.plant("tsconfig.json", "{ bad")
+        c, out = self.check()
+        self.assertNotEqual(c.returncode, 0, out)
+        self.assertRegex(out, r"error TS\d+")
+        self.assertNotIn("zero source files", out)
 
     def test_package_json_is_untouched(self):
         self.check()

@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# Package-manager helpers of the typescript layer, shared by scripts/check.d/20-typescript.sh and the CI install step.
+# Package-manager helpers of the typescript layer, shared by scripts/ts-common.sh (the check.d scripts) and the CI install step.
 #   bash scripts/ts-pm.sh detect    prints pnpm, npm, yarn or bun, from the lockfile in the current folder
 #   bash scripts/ts-pm.sh install   installs the dependencies from the lockfile and refuses to change it
 #   source scripts/ts-pm.sh         defines ts_detect_pm, ts_install_cmd, ts_install and ts_oneoff
-# With two lockfiles the first in this order wins: pnpm-lock.yaml, package-lock.json, yarn.lock, bun.lock.
+# With two lockfiles the first in this order wins: pnpm-lock.yaml, package-lock.json, yarn.lock, bun.lock (bun.lockb, the older binary format, counts as bun.lock).
 
 ts_detect_pm() {
   if [ -f pnpm-lock.yaml ]; then
@@ -47,15 +47,20 @@ ts_install() {
   "${TS_INSTALL_CMD[@]}"
 }
 
-# ts_oneoff <pm> "<pkg@version> [<pkg@version> ...]" <binary> [args...]
+# ts_oneoff <pm> <binary> <pkg@version>... -- [args...]
 # Runs a binary from pinned packages without touching package.json, through the package manager's own one-off runner.
-# Yarn 1 has none and bun's runner takes one package, so those use npx (Node is always there for this layer).
+# Yarn 1 has none and bun's runner takes a single package, so those use npx (Node is always there for this layer).
 ts_oneoff() {
-  local pm=$1 pkgs=$2 bin=$3
-  shift 3
-  local -a flags=() pnpm_flags=()
+  local pm=$1 bin=$2
+  shift 2
+  local -a pkgs=() flags=() pnpm_flags=()
+  while [ "$#" -gt 0 ] && [ "$1" != "--" ]; do
+    pkgs+=("$1")
+    shift
+  done
+  [ "${1:-}" = "--" ] && shift
   local p
-  for p in $pkgs; do
+  for p in "${pkgs[@]}"; do
     flags+=(-p "$p")
     pnpm_flags+=("--package=$p")
   done
@@ -69,7 +74,7 @@ ts_oneoff() {
       fi
       ;;
     bun)
-      if [ "${#flags[@]}" -eq 2 ]; then
+      if [ "${#pkgs[@]}" -eq 1 ]; then
         bunx "${flags[@]}" "$bin" "$@"
       else
         npx -y "${flags[@]}" "$bin" "$@"

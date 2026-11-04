@@ -3,8 +3,18 @@
 // (.ts .tsx .js .jsx and the .m/.c variants), not JSON, Markdown or CSS. oxfmt skips node_modules and
 // everything in .gitignore on its own.
 // A project that formats with Prettier options of its own should set the same options here by hand.
+// The ignore list is the same as in .oxlintrc.json; keep the two in step.
 {
   "printWidth": 80,
   "sortPackageJson": false,
-  "ignorePatterns": ["**/dist/**", "**/build/**", "**/coverage/**", "**/.next/**"]
+  "ignorePatterns": [
+    "**/node_modules/**",
+    "**/dist/**",
+    "**/build/**",
+    "**/coverage/**",
+    "**/.next/**",
+    "**/.open-next/**",
+    "**/.wrangler/**",
+    "**/.turbo/**"
+  ]
 }

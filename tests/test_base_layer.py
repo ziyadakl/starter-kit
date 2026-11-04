@@ -7,7 +7,7 @@ import shutil
 import subprocess
 import unittest
 
-from tests.helpers import git_config, new_project, run_check, run_kit
+from tests.helpers import clean_env, git_config, new_project, run_check, run_kit
 
 HAVE_GITLEAKS = shutil.which("gitleaks") is not None
 
@@ -15,10 +15,6 @@ HAVE_GITLEAKS = shutil.which("gitleaks") is not None
 def fake_key():
     # Built at run time so no key-shaped string sits in this file.
     return "ghp_" + "aB3dE5gH7jK9mN1pQ3sT5vW7yZ0bC2eF4hJ6"
-
-
-def clean_env():
-    return {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
 
 
 class Applied(unittest.TestCase):
@@ -109,6 +105,8 @@ class TestWorkflow(Applied):
     def test_gitleaks_scan_still_runs_on_drafts(self):
         gl = self.path(".github/workflows/gitleaks.yml").read_text()
         self.assertNotIn("draft", gl)
+        # No `if:` on any job (4 spaces) or on the workflow's jobs section that could skip a draft or anything else.
+        self.assertNotRegex(gl, r"(?m)^    if:")
 
     def test_no_tab_characters(self):
         self.assertNotIn("\t", self.text)
