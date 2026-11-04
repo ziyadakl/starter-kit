@@ -3,3 +3,5 @@
 # Claude has to edit. A weakened "strict" or a skipped file in tsconfig.json is not caught.
 .oxlintrc.json
 .oxfmtrc.json
+.oxlint-kit.json
+.oxlint-project.json

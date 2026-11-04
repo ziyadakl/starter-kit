@@ -14,6 +14,13 @@ import unittest
 
 from tests.helpers import KIT_ROOT, clean_env, new_project, run_kit
 
+# The seam the other lint-adoption slices build on: the project's own lint file, the kit's rules file, the cap key, and
+# the command the lint check prints when the warning count drops below the cap.
+PROJECT_FILE = ".oxlint-project.json"
+KIT_RULES_FILE = ".oxlint-kit.json"
+CAP_KEY = "maxWarnings"
+LOWER_CAP_COMMAND = "bash scripts/lint-cap.sh"
+
 PACKAGE_JSON = {"name": "demo", "version": "1.0.0", "private": True}
 TSCONFIG = {
     "compilerOptions": {
@@ -58,6 +65,11 @@ exit 0
 FAKE_OXLINT = r"""#!/usr/bin/env bash
 mode="${FAKE_OXLINT:-ok}"
 summary() { echo "Found 0 warnings and $1 errors."; echo "Finished in 1ms on ${2:-1} file with 90 rules using 1 threads."; }
+case " $* " in
+  *" --print-config "*)
+    echo '{ "rules": { "no-debugger": "deny", "typescript/no-floating-promises": "deny", "typescript/no-misused-promises": "deny", "typescript/await-thenable": "deny" }, "overrides": [], "options": {} }'
+    exit 0 ;;
+esac
 for a in "$@"; do
   if [ -f "$a/canary.ts" ]; then
     sev=Error
@@ -159,10 +171,13 @@ class TestApply(TypeScriptProject):
             "scripts/ts-common.sh",
             "scripts/ts-pm.sh",
             ".oxlintrc.json",
+            ".oxlint-kit.json",
             ".oxfmtrc.json",
             ".claude/protect.d/typescript.txt",
         ):
             self.assertTrue((self.project / rel).is_file(), rel)
+        # The project file is the project's own: apply never writes it.
+        self.assertFalse((self.project / PROJECT_FILE).exists())
         # The kit no longer ships a Node version file: CI reads the project's own, else uses Node 22.
         self.assertFalse((self.project / ".nvmrc").exists())
         self.assertFalse((self.project / "scripts/check.d/20-typescript.sh").exists())
@@ -201,7 +216,7 @@ class TestApply(TypeScriptProject):
         self.assertEqual(r.returncode, 0, r.stderr)
 
     def test_config_guard_protects_the_oxc_configs(self):
-        for name in (".oxlintrc.json", ".oxfmtrc.json"):
+        for name in (".oxlintrc.json", KIT_RULES_FILE, PROJECT_FILE, ".oxfmtrc.json"):
             payload = {"tool_input": {"file_path": str(self.project / name)}}
             env = {"CLAUDE_PROJECT_DIR": str(self.project)}
             r = subprocess.run(
@@ -222,8 +237,17 @@ class TestApply(TypeScriptProject):
             "\n".join(ln for ln in lines if not ln.lstrip().startswith("//"))
         )
 
-    def test_lint_config_is_the_monorepos_finished_rule_set(self):
+    def test_root_config_extends_the_kit_rules_then_the_optional_project_file(self):
         cfg = self.config(".oxlintrc.json")
+        self.assertEqual(cfg["extends"], [f"./{KIT_RULES_FILE}", f"./{PROJECT_FILE}"])
+        self.assertNotIn(
+            "rules", cfg
+        )  # ignored folders stay here: oxlint drops them from an extended file
+        self.assertIn("ignorePatterns", cfg)
+        self.assertNotIn("ignorePatterns", self.config(KIT_RULES_FILE))
+
+    def test_lint_config_is_the_monorepos_finished_rule_set(self):
+        cfg = self.config(KIT_RULES_FILE)
         self.assertEqual(cfg["categories"], {"correctness": "off"})
         self.assertTrue(cfg["options"]["typeAware"])
         self.assertEqual(cfg["plugins"], ["typescript", "import"])
@@ -247,7 +271,9 @@ class TestApply(TypeScriptProject):
         self.assertEqual(react[0]["rules"]["react/rules-of-hooks"], "error")
 
     def test_lint_config_holds_nothing_specific_to_the_monorepo(self):
-        text = (self.project / ".oxlintrc.json").read_text()
+        text = (self.project / KIT_RULES_FILE).read_text() + (
+            self.project / ".oxlintrc.json"
+        ).read_text()
         for word in (
             "apps/",
             "packages/",
@@ -258,7 +284,7 @@ class TestApply(TypeScriptProject):
             "nextjs/",
         ):
             self.assertNotIn(word, text)
-        cfg = self.config(".oxlintrc.json")
+        cfg = self.config(KIT_RULES_FILE)
         # The unbound-method override for tests stays (it is the kit's own, measured on a real project).
         off = [
             o["files"]
@@ -281,7 +307,7 @@ class TestApply(TypeScriptProject):
         self.assertIn("**/*.{jsx,mjs,cjs,mts,cts}", lint)
 
     def test_never_overwritten_comment_matches_apply(self):
-        text = (self.project / ".oxlintrc.json").read_text()
+        text = (self.project / KIT_RULES_FILE).read_text()
         self.assertNotIn("never overwritten", text)
         self.assertIn("--force", text)
 
@@ -848,6 +874,148 @@ class TestRealTools(TypeScriptProject):
         self.assertEqual(
             json.loads((self.project / "package.json").read_text()), PACKAGE_JSON
         )
+
+
+PROMISE_BUG = "async function f() {\n  return 1;\n}\nf();\n"
+NON_NULL = (
+    'const m = new Map<string, number>();\nexport const v: number = m.get("a")!;\n'
+)
+UNSAFE = "export const u: number = JSON.parse('1');\n"
+
+
+@unittest.skipUnless(shutil.which("npx") and shutil.which("node"), "needs node and npx")
+class TestLintAdoption(TypeScriptProject):
+    """The locked rules, the project file and the warning cap, on the kit's pinned oxlint through npx."""
+
+    fake_tools = False
+
+    def plant(self, name, text):
+        p = self.project / name
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(text)
+
+    def project_file(self, rules=None, cap=None, overrides=None):
+        cfg = {}
+        if rules is not None:
+            cfg["rules"] = rules
+        if overrides is not None:
+            cfg["overrides"] = overrides
+        if cap is not None:
+            cfg["options"] = {CAP_KEY: cap}
+        (self.project / PROJECT_FILE).write_text(json.dumps(cfg))
+
+    def lint_fails(self):
+        c, out = self.check()
+        self.assertNotEqual(c.returncode, 0, out)
+        self.assertIn("CHECK FAILED: scripts/check.d/21-ts-lint.sh", out)
+        return out
+
+    def test_no_project_file_means_the_full_rule_set(self):
+        self.plant("src/n.ts", NON_NULL)
+        out = self.lint_fails()
+        self.assertIn("no-non-null-assertion", out)
+        self.assertNotIn(LOWER_CAP_COMMAND, out)
+
+    def test_a_locked_rule_lowered_in_the_project_file_fails_naming_it(self):
+        for rule in (
+            "typescript/no-floating-promises",
+            "typescript/no-misused-promises",
+            "typescript/await-thenable",
+            "no-debugger",
+        ):
+            for level in ("warn", "off"):
+                self.project_file(rules={rule: level})
+                out = self.lint_fails()
+                self.assertIn(f"locked rule {rule}", out, (rule, level))
+
+    def test_a_locked_rule_lowered_in_a_project_override_fails_naming_it(self):
+        self.project_file(
+            overrides=[
+                {
+                    "files": ["public/**"],
+                    "rules": {"typescript/no-floating-promises": "off"},
+                }
+            ]
+        )
+        self.assertIn("locked rule typescript/no-floating-promises", self.lint_fails())
+
+    def test_a_rule_outside_the_allowed_list_cannot_be_lowered(self):
+        self.project_file(rules={"typescript/no-explicit-any": "warn"}, cap=5)
+        self.assertIn("typescript/no-explicit-any", self.lint_fails())
+        self.project_file(rules={"prefer-const": "off"})
+        self.assertIn("prefer-const", self.lint_fails())
+
+    def test_an_allowed_rule_lowered_to_warn_passes_at_or_under_the_cap(self):
+        self.plant("src/n.ts", NON_NULL)
+        self.project_file(rules={"typescript/no-non-null-assertion": "warn"}, cap=1)
+        c, out = self.check()
+        self.assertEqual(c.returncode, 0, out)
+        self.assertIn("CHECK PASSED", c.stdout)
+        self.assertNotIn(LOWER_CAP_COMMAND, out)  # at the cap: nothing to lower
+
+    def test_warnings_over_the_cap_fail_with_the_cap_and_the_count(self):
+        self.plant("src/n.ts", NON_NULL)
+        self.project_file(rules={"typescript/no-non-null-assertion": "warn"}, cap=0)
+        out = self.lint_fails()
+        self.assertIn("over the cap of 0", out)
+        self.assertIn("1 warning", out)
+        self.assertIn(PROJECT_FILE, out)
+
+    def test_a_count_below_the_cap_prints_the_lower_cap_command(self):
+        self.plant("src/n.ts", NON_NULL)
+        self.project_file(rules={"typescript/no-non-null-assertion": "warn"}, cap=3)
+        c, out = self.check()
+        self.assertEqual(c.returncode, 0, out)
+        self.assertIn("below the cap of 3", out)
+        self.assertIn(LOWER_CAP_COMMAND, out)
+
+    def test_browser_files_override_skips_unsafe_rules_but_keeps_promise_rules(self):
+        self.plant("src/browser/b.ts", UNSAFE + PROMISE_BUG)
+        c, out = self.check()  # control: with no override both fire
+        self.assertIn("no-unsafe-assignment", out)
+        self.assertIn("no-floating-promises", out)
+        self.project_file(
+            overrides=[
+                {
+                    "files": ["src/browser/**"],
+                    "rules": {
+                        "typescript/no-unsafe-assignment": "off",
+                        "no-var": "off",
+                    },
+                }
+            ]
+        )
+        out = self.lint_fails()
+        self.assertNotIn("no-unsafe-assignment", out)
+        self.assertIn("no-floating-promises", out)
+        self.assertNotIn("locked rule", out)  # lowering an allowed rule is no violation
+
+    def test_the_lint_canary_still_runs_under_a_project_file(self):
+        self.project_file(rules={"typescript/no-non-null-assertion": "warn"}, cap=0)
+        c, out = self.check()
+        self.assertEqual(c.returncode, 0, out)
+        self.assertNotIn("CANARY FAILED", out)
+
+
+class TestKitUpdate(TypeScriptProject):
+    def test_update_leaves_the_project_file_alone_and_updates_the_kit_rules_file(self):
+        layers = self.project.parent / (self.project.name + "-layers")
+        shutil.copytree(KIT_ROOT / "layers", layers)
+        self.addCleanup(shutil.rmtree, layers, True)
+        tmp, p = new_project()
+        self.addCleanup(tmp.cleanup)
+        r = run_kit("apply", "--layers-dir", layers, "--layer", "typescript", p)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        mine = '{"options": {"maxWarnings": 7}}\n'
+        (p / PROJECT_FILE).write_text(mine)
+        kit_file = layers / "typescript/files" / KIT_RULES_FILE
+        kit_file.write_text(kit_file.read_text() + "\n// a later kit release\n")
+        r = run_kit("update", "--layers-dir", layers, p)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual((p / PROJECT_FILE).read_text(), mine)
+        self.assertIn("a later kit release", (p / KIT_RULES_FILE).read_text())
+        record = json.loads((p / ".starter-kit.json").read_text())
+        self.assertNotIn(PROJECT_FILE, record["files"])
 
 
 if __name__ == "__main__":

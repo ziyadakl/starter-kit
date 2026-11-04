@@ -1,0 +1,232 @@
+// The kit's lint rules, run by scripts/check.d/21-ts-lint.sh through .oxlintrc.json. The kit owns this file:
+// `kit.py update` keeps it current, and Claude's config guard refuses edits to it. Put project-specific lint settings
+// in .oxlint-project.json instead (see .oxlintrc.json).
+//
+// The rule set is a copy of a finished monorepo config: oxlint's own categories are off and every rule is named, so
+// a new oxlint release cannot start failing your push by turning on a rule you never chose. The type-aware rules
+// (the typescript/no-unsafe-*, no-floating-promises, no-misused-promises, no-unnecessary-condition and similar)
+// are on: the check runs oxlint from the repo root with --type-aware, which also needs the tsconfig.json there.
+// Run from a subfolder, oxlint skips these files. A rule set at "warn" is shown but does not fail the check.
+//
+// Three groups: no-floating-promises, no-misused-promises, await-thenable and no-debugger are locked (always errors,
+// the check fails if a project lowers one); the typescript/no-unsafe-* family, no-non-null-assertion,
+// prefer-nullish-coalescing, prefer-optional-chain and require-await may be lowered to "warn" in the project file;
+// every other rule stays an error.
+//
+// Change a rule by editing this file by hand. `kit.py apply` stops instead of replacing a file that already differs
+// (`--force` overwrites it).
+{
+  "plugins": ["typescript", "import"],
+  "categories": { "correctness": "off" },
+  "options": { "typeAware": true },
+  "env": { "builtin": true },
+  "rules": {
+    "typescript/adjacent-overload-signatures": "error",
+    "typescript/array-type": "error",
+    "typescript/await-thenable": "error",
+    "typescript/ban-ts-comment": "error",
+    "typescript/ban-tslint-comment": "error",
+    "typescript/class-literal-property-style": "error",
+    "typescript/consistent-generic-constructors": "error",
+    "typescript/consistent-indexed-object-style": "error",
+    "typescript/consistent-type-assertions": "error",
+    "typescript/consistent-type-definitions": "error",
+    "typescript/consistent-type-imports": [
+      "warn",
+      {
+        "prefer": "type-imports",
+        "fixStyle": "separate-type-imports"
+      }
+    ],
+    "typescript/dot-notation": [
+      "error",
+      {
+        "allowIndexSignaturePropertyAccess": false,
+        "allowKeywords": true,
+        "allowPattern": "",
+        "allowPrivateClassPropertyAccess": false,
+        "allowProtectedClassPropertyAccess": false
+      }
+    ],
+    "typescript/no-array-constructor": "error",
+    "typescript/no-array-delete": "error",
+    "typescript/no-base-to-string": "error",
+    "typescript/no-confusing-non-null-assertion": "error",
+    "typescript/no-duplicate-enum-values": "error",
+    "typescript/no-duplicate-type-constituents": "error",
+    "typescript/no-empty-function": ["error", { "allow": [] }],
+    "typescript/no-empty-object-type": "error",
+    "typescript/no-explicit-any": "error",
+    "typescript/no-extra-non-null-assertion": "error",
+    "typescript/no-floating-promises": "error",
+    "typescript/no-for-in-array": "error",
+    "typescript/no-implied-eval": "error",
+    "typescript/no-inferrable-types": "error",
+    "typescript/no-misused-new": "error",
+    "typescript/no-misused-promises": [
+      "error",
+      { "checksVoidReturn": { "attributes": false } }
+    ],
+    "typescript/no-namespace": "error",
+    "typescript/no-non-null-asserted-optional-chain": "error",
+    "typescript/no-non-null-assertion": "error",
+    "typescript/no-redundant-type-constituents": "error",
+    "typescript/no-require-imports": "error",
+    "typescript/no-this-alias": "error",
+    "typescript/no-unnecessary-condition": [
+      "error",
+      { "allowConstantLoopConditions": true }
+    ],
+    "typescript/no-unnecessary-type-assertion": "error",
+    "typescript/no-unnecessary-type-constraint": "error",
+    "typescript/no-unsafe-argument": "error",
+    "typescript/no-unsafe-assignment": "error",
+    "typescript/no-unsafe-call": "error",
+    "typescript/no-unsafe-declaration-merging": "error",
+    "typescript/no-unsafe-enum-comparison": "error",
+    "typescript/no-unsafe-function-type": "error",
+    "typescript/no-unsafe-member-access": "error",
+    "typescript/no-unsafe-return": "error",
+    "typescript/no-unsafe-unary-minus": "error",
+    "typescript/no-unused-expressions": [
+      "error",
+      {
+        "allowShortCircuit": false,
+        "allowTaggedTemplates": false,
+        "allowTernary": false
+      }
+    ],
+    "typescript/no-unused-vars": [
+      "error",
+      {
+        "argsIgnorePattern": "^_",
+        "varsIgnorePattern": "^_"
+      }
+    ],
+    "typescript/no-wrapper-object-types": "error",
+    "typescript/non-nullable-type-assertion-style": "error",
+    "typescript/only-throw-error": "error",
+    "typescript/prefer-as-const": "error",
+    "typescript/prefer-find": "error",
+    "typescript/prefer-for-of": "error",
+    "typescript/prefer-function-type": "error",
+    "typescript/prefer-includes": "error",
+    "typescript/prefer-namespace-keyword": "error",
+    "typescript/prefer-nullish-coalescing": "error",
+    "typescript/prefer-optional-chain": "error",
+    "typescript/prefer-promise-reject-errors": "error",
+    "typescript/prefer-regexp-exec": "error",
+    "typescript/prefer-string-starts-ends-with": "error",
+    "typescript/require-await": "error",
+    "typescript/restrict-plus-operands": "error",
+    "typescript/restrict-template-expressions": "error",
+    "typescript/triple-slash-reference": "error",
+    "typescript/unbound-method": "error",
+    "for-direction": "error",
+    "import/consistent-type-specifier-style": ["error", "prefer-top-level"],
+    "no-async-promise-executor": "error",
+    "no-case-declarations": "error",
+    "no-compare-neg-zero": "error",
+    "no-cond-assign": ["error", "except-parens"],
+    "no-constant-binary-expression": "error",
+    "no-constant-condition": ["error", { "checkLoops": "allExceptWhileTrue" }],
+    "no-control-regex": "error",
+    "no-debugger": "error",
+    "no-delete-var": "error",
+    "no-dupe-else-if": "error",
+    "no-duplicate-case": "error",
+    "no-empty": ["error", { "allowEmptyCatch": false }],
+    "no-empty-character-class": "error",
+    "no-empty-pattern": ["error", { "allowObjectPatternsAsParameters": false }],
+    "no-empty-static-block": "error",
+    "no-ex-assign": "error",
+    "no-extra-boolean-cast": ["error", {}],
+    "no-fallthrough": [
+      "error",
+      {
+        "allowEmptyCase": false,
+        "reportUnusedFallthroughComment": false
+      }
+    ],
+    "no-global-assign": ["error", { "exceptions": [] }],
+    "no-invalid-regexp": ["error", {}],
+    "no-irregular-whitespace": [
+      "error",
+      {
+        "skipComments": false,
+        "skipJSXText": false,
+        "skipRegExps": false,
+        "skipStrings": true,
+        "skipTemplates": false
+      }
+    ],
+    "no-loss-of-precision": "error",
+    "no-misleading-character-class": ["error", { "allowEscape": false }],
+    "no-nonoctal-decimal-escape": "error",
+    "no-prototype-builtins": "error",
+    "no-regex-spaces": "error",
+    "no-self-assign": ["error", { "props": true }],
+    "no-shadow-restricted-names": ["error", { "reportGlobalThis": false }],
+    "no-sparse-arrays": "error",
+    "no-unexpected-multiline": "error",
+    "no-unsafe-finally": "error",
+    "no-unsafe-optional-chaining": [
+      "error",
+      { "disallowArithmeticOperators": false }
+    ],
+    "no-unused-labels": "error",
+    "no-unused-private-class-members": "error",
+    "no-useless-backreference": "error",
+    "no-useless-catch": "error",
+    "no-useless-escape": ["error", { "allowRegexCharacters": [] }],
+    "no-var": "error",
+    "prefer-const": [
+      "error",
+      {
+        "destructuring": "any",
+        "ignoreReadBeforeAssign": false
+      }
+    ],
+    "prefer-rest-params": "error",
+    "prefer-spread": "error",
+    "require-yield": "error",
+    "use-isnan": [
+      "error",
+      {
+        "enforceForIndexOf": false,
+        "enforceForSwitchCase": true
+      }
+    ],
+    "valid-typeof": ["error", { "requireStringLiterals": false }]
+  },
+  "overrides": [
+    {
+      // eslint-plugin-react-hooks, as the monorepo applies it, on component files only.
+      "files": ["**/*.tsx", "**/*.jsx"],
+      "plugins": ["react"],
+      "rules": {
+        "react/error-boundaries": "error",
+        "react/exhaustive-deps": "warn",
+        "react/globals": "error",
+        "react/immutability": "error",
+        "react/incompatible-library": "warn",
+        "react/preserve-manual-memoization": "error",
+        "react/purity": "error",
+        "react/refs": "error",
+        "react/rules-of-hooks": "error",
+        "react/set-state-in-effect": "error",
+        "react/set-state-in-render": "error",
+        "react/static-components": "error",
+        "react/unsupported-syntax": "warn",
+        "react/use-memo": "error",
+        "react/void-use-memo": "error"
+      }
+    },
+    {
+      // Asserting on a mock's method (expect(obj.method).toHaveBeenCalled()) is the normal way to write a test;
+      // unbound-method flagged 222 such lines in one real project and nothing else.
+      "files": ["**/*.test.*", "**/*.spec.*", "**/__tests__/**"],
+      "rules": { "typescript/unbound-method": "off" }
+    }
+  ]
+}

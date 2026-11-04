@@ -18,6 +18,17 @@ OXLINT_TSGOLINT_VERSION=7.0.2005
 # renovate: datasource=npm depName=oxfmt
 OXFMT_VERSION=0.75.0
 FORMAT_GLOB='**/*.{js,jsx,mjs,cjs,ts,tsx,mts,cts}'
+
+# The lint files and rule groups (see .oxlint-kit.json). The lower-cap command and the CI cap check read these too.
+# Locked rules are always errors. Lowerable rules (a trailing * is a prefix) may be set to warn or off in the project
+# file; no-var may also be turned off there, in an override for untyped browser files. Every other rule stays an error.
+LINT_KIT_FILE=.oxlint-kit.json
+LINT_PROJECT_FILE=.oxlint-project.json
+LINT_CAP_KEY=maxWarnings
+LINT_CAP_COMMAND="bash scripts/lint-cap.sh"
+LINT_LOCKED_RULES="typescript/no-floating-promises typescript/no-misused-promises typescript/await-thenable no-debugger"
+LINT_LOWERABLE_RULES="typescript/no-unsafe-* typescript/no-non-null-assertion typescript/prefer-nullish-coalescing typescript/prefer-optional-chain typescript/require-await"
+export LINT_KIT_FILE LINT_PROJECT_FILE LINT_CAP_KEY LINT_CAP_COMMAND LINT_LOCKED_RULES LINT_LOWERABLE_RULES
 export TYPESCRIPT_VERSION OXLINT_VERSION OXLINT_TSGOLINT_VERSION OXFMT_VERSION FORMAT_GLOB
 
 # shellcheck source=/dev/null
