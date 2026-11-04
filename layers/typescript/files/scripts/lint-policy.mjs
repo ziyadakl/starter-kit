@@ -24,6 +24,7 @@
 // file that lowers anything must also set options.maxWarnings.
 import fs from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 class PolicyError extends Error {}
 
@@ -126,7 +127,7 @@ const real = (p) => {
 const rel = (p) =>
   path.relative(real(process.cwd()), real(p)).split(path.sep).join("/");
 
-// A glob of an oxlint override as a regular expression: **, *, ? and {a,b}.
+// A glob of an oxlint override as a regular expression: **, *, ?, {a,b} and [classes].
 export function globToRegExp(glob) {
   let re = "";
   const g = glob.replace(/^\.\//, "");
@@ -140,6 +141,13 @@ export function globToRegExp(glob) {
         re += ".*";
         i += 1;
       }
+    } else if (c === "[" && g.indexOf("]", i + 2) !== -1) {
+      // A character class, read the way oxlint's glob matcher reads it ("[!x]" negates).
+      const end = g.indexOf("]", i + 2);
+      let body = g.slice(i + 1, end);
+      if (body.startsWith("!")) body = `^${body.slice(1)}`;
+      re += `[${body.replace(/\\/g, "\\\\")}]`;
+      i = end;
     } else if (c === "*") re += "[^/]*";
     else if (c === "?") re += "[^/]";
     else if (c === "{") re += "(?:";
@@ -416,7 +424,7 @@ function main(argv) {
 
 if (
   process.argv[1] &&
-  real(process.argv[1]) === real(new URL(import.meta.url).pathname)
+  real(process.argv[1]) === real(fileURLToPath(import.meta.url))
 ) {
   try {
     main(process.argv.slice(2));

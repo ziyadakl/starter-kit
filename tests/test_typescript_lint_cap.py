@@ -201,7 +201,13 @@ class TestLintPolicy(unittest.TestCase):
         )
         self.assertIn("only files outside the tsconfig", out)
         # a single file glob, a nested glob and a brace glob are matched too
-        for glob in ("src/a.ts", "**/b.ts", "{lib,src}/**/*.ts"):
+        for glob in (
+            "src/a.ts",
+            "**/b.ts",
+            "{lib,src}/**/*.ts",
+            "sr[c]/**",
+            "[s]rc/sub/b.ts",
+        ):
             self.refused(
                 self.merged(overrides=[{"files": [glob], "rules": rules}], cap=3),
                 "tsconfig",
@@ -820,3 +826,37 @@ class TestFixCommand(TypeScriptProject):
         ]
         self.assertEqual(left, [])
         self.assertFalse((self.project / PROJECT_FILE).exists())
+
+    def test_leaves_unfixable_findings_and_still_formats_inside_a_claude_session(self):
+        # Inside a Claude session oxlint picks another output format; the fixer must not read that as "did not run".
+        self.plant(
+            "src/b.ts", "async function g() {\n  return 1\n}\n   g()\nexport {}\n"
+        )
+        c = run_script(
+            self.project,
+            "bash",
+            "scripts/ts-fix.sh",
+            env={"CLAUDECODE": "1", "AI_AGENT": "claude-code"},
+        )
+        self.assertEqual(c.returncode, 0, c.stdout + c.stderr)
+        self.assertIn("formatted", c.stdout)
+        self.assertIn("\ng();\n", (self.project / "src/b.ts").read_text())
+
+
+@unittest.skipUnless(shutil.which("node"), "needs node")
+class TestPolicyPathWithSpace(unittest.TestCase):
+    def test_the_policy_runs_from_a_folder_whose_path_has_a_space(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            d = Path(tmp) / "my projects"
+            d.mkdir()
+            shutil.copy(POLICY, d / "lint-policy.mjs")
+            (d / "p.json").write_text('// header\n{"options": {"maxWarnings": 7}}\n')
+            env = {**clean_env(), **POLICY_ENV}
+            c = subprocess.run(
+                [NODE, str(d / "lint-policy.mjs"), "cap", str(d / "p.json")],
+                capture_output=True,
+                text=True,
+                env=env,
+                check=False,
+            )
+            self.assertEqual((c.returncode, c.stdout.strip()), (0, "7"), c.stderr)

@@ -27,8 +27,9 @@ if [ ! -f "$LINT_PROJECT_FILE" ]; then
 fi
 
 echo "-- fix (oxlint $OXLINT_VERSION, type-aware)"
-# oxlint exits non-zero while findings remain; only a run that produced no report is a failure here.
-out=$(tool oxlint "${oxlint_pkgs[@]}" -- --type-aware --fix -c "$config_file" . 2>&1)
+# oxlint exits non-zero while findings remain; only a run that produced no report is a failure here. -f default keeps
+# the summary line: inside a Claude session oxlint otherwise picks a format without it.
+out=$(tool oxlint "${oxlint_pkgs[@]}" -- --type-aware --fix -f default -c "$config_file" . 2>&1)
 status=$?
 printf '%s\n' "$out" | tail -3
 if [ "$status" -ne 0 ] && ! printf '%s\n' "$out" | grep -q 'Found [0-9]* warning'; then
