@@ -39,13 +39,31 @@ class TestBaseLayer(ApplyBase):
         self.assertNotEqual(c.returncode, 0)
         self.assertIn("50-broken.sh", c.stdout + c.stderr)
 
-    def test_check_stops_at_first_failure(self):
+    def test_check_runs_every_script_after_a_failure_and_lists_all_failures(self):
         run_kit("apply", self.project)
         plant(self.project, "50-a.sh", "#!/usr/bin/env bash\nexit 1\n")
         plant(self.project, "60-b.sh", "#!/usr/bin/env bash\necho SECOND-RAN\n")
+        plant(self.project, "70-c.sh", "#!/usr/bin/env bash\nexit 3\n")
         c = run_check(self.project)
         self.assertNotEqual(c.returncode, 0)
-        self.assertNotIn("SECOND-RAN", c.stdout)
+        self.assertIn("SECOND-RAN", c.stdout)
+        failures = [ln for ln in c.stderr.splitlines() if ln.startswith("CHECK FAILED")]
+        self.assertEqual(
+            failures,
+            [
+                "CHECK FAILED: scripts/check.d/50-a.sh",
+                "CHECK FAILED: scripts/check.d/70-c.sh",
+            ],
+        )
+        self.assertEqual(c.stderr.splitlines()[-1], failures[-1])
+        self.assertNotIn("CHECK PASSED", c.stdout)
+
+    def test_cheap_scripts_run_before_slow_ones(self):
+        run_kit("apply", self.project)
+        plant(self.project, "30-slow.sh", "#!/usr/bin/env bash\necho ORDER-30\n")
+        plant(self.project, "15-cheap.sh", "#!/usr/bin/env bash\necho ORDER-15\n")
+        c = run_check(self.project)
+        self.assertLess(c.stdout.index("ORDER-15"), c.stdout.index("ORDER-30"))
 
     def test_bytecode_in_a_layer_is_not_copied(self):
         layers = Path(self.tmp.name) / "layers"

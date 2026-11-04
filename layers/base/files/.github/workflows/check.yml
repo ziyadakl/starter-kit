@@ -4,6 +4,8 @@ name: check
 
 on:
   pull_request:
+    # ready_for_review: marking a draft ready runs the check once (drafts skip it, see the check job).
+    types: [opened, synchronize, reopened, ready_for_review]
     paths-ignore:
       - '**/*.md'
       - 'docs/**'
@@ -19,6 +21,7 @@ concurrency:
 
 jobs:
   check:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
