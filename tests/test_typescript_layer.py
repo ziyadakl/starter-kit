@@ -997,6 +997,137 @@ class TestLintAdoption(TypeScriptProject):
         self.assertNotIn("CANARY FAILED", out)
 
 
+@unittest.skipUnless(shutil.which("npx") and shutil.which("node"), "needs node and npx")
+class TestLowerCap(TypeScriptProject):
+    """The lower-cap command (scripts/lint-cap.sh) on the kit's pinned oxlint through npx."""
+
+    fake_tools = False
+
+    def plant(self, name, text):
+        p = self.project / name
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(text)
+
+    def lint_cap(self):
+        c = run_script(self.project, "bash", "scripts/lint-cap.sh")
+        return c, c.stdout + c.stderr
+
+    def project_cfg(self):
+        text = (self.project / PROJECT_FILE).read_text()
+        return json.loads(re.sub(r"(?m)^\s*//.*$", "", text))
+
+    def write_cfg(self, cfg):
+        (self.project / PROJECT_FILE).write_text(json.dumps(cfg))
+
+    def test_first_run_warns_the_allowed_rules_that_fire_and_sets_the_cap(self):
+        self.plant("src/n.ts", NON_NULL + UNSAFE.replace("'1'", '"1"'))
+        c, out = self.lint_cap()
+        self.assertEqual(c.returncode, 0, out)
+        cfg = self.project_cfg()
+        self.assertEqual(
+            cfg["rules"],
+            {
+                "typescript/no-non-null-assertion": "warn",
+                "typescript/no-unsafe-assignment": "warn",
+            },
+        )
+        self.assertEqual(cfg["options"][CAP_KEY], 2)
+        c, out = self.check()  # the check is green, at the cap
+        self.assertEqual(c.returncode, 0, out)
+        self.assertNotIn(LOWER_CAP_COMMAND, out)
+
+    def test_a_project_without_warnings_gets_no_project_file(self):
+        c, out = self.lint_cap()
+        self.assertEqual(c.returncode, 0, out)
+        self.assertIn("no project file is needed", out)
+        self.assertFalse((self.project / PROJECT_FILE).exists())
+
+    def test_a_second_run_changes_nothing(self):
+        self.plant("src/n.ts", NON_NULL)
+        self.lint_cap()
+        first = (self.project / PROJECT_FILE).read_text()
+        c, out = self.lint_cap()
+        self.assertEqual(c.returncode, 0, out)
+        self.assertEqual((self.project / PROJECT_FILE).read_text(), first)
+
+    def test_it_lowers_an_existing_cap_and_drops_rules_that_no_longer_fire(self):
+        self.plant("src/n.ts", NON_NULL)
+        self.write_cfg(
+            {
+                "rules": {
+                    "typescript/no-non-null-assertion": "warn",
+                    "typescript/no-unsafe-assignment": "warn",
+                },
+                "options": {CAP_KEY: 9},
+            }
+        )
+        c, out = self.lint_cap()
+        self.assertEqual(c.returncode, 0, out)
+        cfg = self.project_cfg()
+        self.assertEqual(cfg["rules"], {"typescript/no-non-null-assertion": "warn"})
+        self.assertEqual(cfg["options"][CAP_KEY], 1)
+        self.assertIn("was 9", out)
+
+    def test_it_refuses_to_raise_an_existing_cap(self):
+        self.plant("src/n.ts", NON_NULL + NON_NULL.replace("const m", "const m2").replace("m.get", "m2.get").replace("v:", "v2:"))
+        self.write_cfg({"rules": {"typescript/no-non-null-assertion": "warn"}, "options": {CAP_KEY: 1}})
+        before = (self.project / PROJECT_FILE).read_text()
+        c, out = self.lint_cap()
+        self.assertNotEqual(c.returncode, 0, out)
+        self.assertIn("above the cap of 1", out)
+        self.assertEqual((self.project / PROJECT_FILE).read_text(), before)
+
+    def test_a_new_allowed_rule_that_fires_cannot_raise_a_zero_cap(self):
+        self.plant("src/n.ts", NON_NULL)
+        self.write_cfg({"options": {CAP_KEY: 0}})
+        c, out = self.lint_cap()
+        self.assertNotEqual(c.returncode, 0, out)
+        self.assertEqual(self.project_cfg(), {"options": {CAP_KEY: 0}})
+
+    def test_files_outside_the_tsconfig_skip_unsafe_rules_but_keep_promise_rules(self):
+        self.plant("public/b.js", PROMISE_BUG + "var x = JSON.parse('1');\nexport const y = x.foo;\n")
+        self.plant("public/sub/c.js", "var z = JSON.parse('1');\nexport const w = z.bar;\n")  # nested: one glob covers both
+        self.plant("src/n.ts", UNSAFE.replace("'1'", '"1"'))
+        c, out = self.lint_cap()
+        self.assertEqual(c.returncode, 0, out)
+        cfg = self.project_cfg()
+        # The typed file's unsafe-assignment and the browser file's require-await (not in the skipped family) warn.
+        self.assertEqual(
+            cfg["rules"],
+            {"typescript/no-unsafe-assignment": "warn", "typescript/require-await": "warn"},
+        )
+        self.assertEqual(cfg["options"][CAP_KEY], 2)
+        override = cfg["overrides"][0]
+        self.assertEqual(override["files"], ["public/**"])
+        self.assertEqual(override["rules"]["no-var"], "off")
+        self.assertEqual(override["rules"]["typescript/no-unsafe-member-access"], "off")
+        self.assertNotIn("typescript/no-floating-promises", override["rules"])
+        c, out = self.check()
+        self.assertNotEqual(c.returncode, 0, out)
+        self.assertRegex(out, r"public/b\.js.*no-floating-promises|no-floating-promises[\s\S]*public/b\.js")
+        self.assertNotIn("no-unsafe-member-access", out)
+        self.assertNotIn("no-var", out)
+        self.assertNotIn("locked rule", out)
+        self.assertIn("errors left, by rule", self.lint_cap()[1])
+
+    def test_it_measures_the_same_through_a_symlinked_folder(self):
+        link = self.project.parent / (self.project.name + "-link")
+        link.symlink_to(self.project, target_is_directory=True)
+        self.addCleanup(link.unlink)
+        self.plant("public/b.js", "var x = JSON.parse('1');\nexport const y = x.foo;\n")
+        c = run_script(link, "bash", "scripts/lint-cap.sh", env={"PWD": str(link)})
+        self.assertEqual(c.returncode, 0, c.stdout + c.stderr)
+        self.assertNotIn("typescript/no-unsafe-member-access", self.project_cfg().get("rules", {}))
+
+    def test_locked_rule_findings_stay_errors_and_are_never_lowered(self):
+        self.plant("src/p.ts", "Promise.resolve(1);\ndebugger;\n")
+        c, out = self.lint_cap()
+        self.assertEqual(c.returncode, 0, out)
+        self.assertFalse((self.project / PROJECT_FILE).exists())
+        self.assertIn("typescript/no-floating-promises", out)
+        self.assertIn("no-debugger", out)
+
+
 class TestKitUpdate(TypeScriptProject):
     def test_update_leaves_the_project_file_alone_and_updates_the_kit_rules_file(self):
         layers = self.project.parent / (self.project.name + "-layers")
