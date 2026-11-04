@@ -336,6 +336,7 @@ class TestLintAdoptionDocs(unittest.TestCase):
             for w in (
                 "Apply the kit",
                 "Mechanical commit",
+                "scripts/ts-fix.sh",
                 "linter in fix mode",
                 "formatter in write mode",
                 "repair by hand",
@@ -791,3 +792,31 @@ class TestCapRaiseEndToEnd(BaseBranch):
         r, out = self.in_pull_request()
         self.assertNotEqual(r.returncode, 0, out)
         self.assertIn("only goes down", out)
+
+
+@unittest.skipUnless(shutil.which("npx") and shutil.which("node"), "needs node and npx")
+class TestFixCommand(TypeScriptProject):
+    """The adoption fixer (scripts/ts-fix.sh): the linter's fix mode, then the formatter, on the kit's pinned tools."""
+
+    fake_tools = False
+
+    def test_fixes_and_formats_before_any_project_file_exists(self):
+        # No .oxlint-project.json yet: oxlint itself refuses .oxlintrc.json's extends entry for a missing file.
+        self.plant(
+            "src/a.ts", "export function f(): number {\n  var  x = 1\n    return x\n}\n"
+        )
+        c = run_script(self.project, "bash", "scripts/ts-fix.sh")
+        out = c.stdout + c.stderr
+        self.assertEqual(c.returncode, 0, out)
+        text = (self.project / "src/a.ts").read_text()
+        self.assertNotIn("var ", text)  # the linter's fix ran (no-var)
+        self.assertIn("  return x;\n", text)  # the formatter ran
+        fmt = run_script(self.project, "bash", "scripts/check.d/22-ts-format.sh")
+        self.assertEqual(fmt.returncode, 0, fmt.stdout + fmt.stderr)
+        left = [
+            p.name
+            for p in self.project.iterdir()
+            if re.match(r"\.oxlintrc\..+\.json$", p.name)
+        ]
+        self.assertEqual(left, [])
+        self.assertFalse((self.project / PROJECT_FILE).exists())

@@ -176,6 +176,7 @@ class TestApply(TypeScriptProject):
             "scripts/ts-pm.sh",
             "scripts/lint-cap.sh",
             "scripts/lint-policy.mjs",
+            "scripts/ts-fix.sh",
             ".oxlintrc.json",
             ".oxlint-kit.json",
             ".oxfmtrc.json",
