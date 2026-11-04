@@ -2,5 +2,16 @@
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": ["config:recommended"],
   "updateInternalDeps": true,
-  "rangeStrategy": "bump"
+  "rangeStrategy": "bump",
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "The tool versions pinned in the typescript layer's shared helper, each under a '# renovate:' comment",
+      "managerFilePatterns": ["/(^|/)scripts/ts-common\\.sh$/"],
+      "matchStrings": [
+        "# renovate: datasource=npm depName=(?<depName>\\S+)\\n[A-Z_]+_VERSION=(?<currentValue>\\S+)"
+      ],
+      "datasourceTemplate": "npm"
+    }
+  ]
 }

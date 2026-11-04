@@ -28,14 +28,25 @@ def new_project():
     return tmp, path
 
 
+def clean_env():
+    """The caller's environment without GIT_* variables, so a test's git commands act on the test's own repo, and
+    without the pull-request refs GitHub Actions sets, so the kit's own CI does not turn a test project into a pull
+    request (a test that wants one passes GITHUB_BASE_REF itself)."""
+    drop = {"GITHUB_BASE_REF", "GITHUB_HEAD_REF"}
+    return {
+        k: v
+        for k, v in os.environ.items()
+        if not k.startswith("GIT_") and k not in drop
+    }
+
+
 def run_check(project):
-    env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
     return subprocess.run(
         ["bash", "scripts/check.sh"],
         capture_output=True,
         text=True,
         cwd=project,
-        env=env,
+        env=clean_env(),
         check=False,
     )
 
@@ -58,3 +69,10 @@ def make_layers(root, spec):
             p = Path(root) / layer / rel
             p.parent.mkdir(parents=True, exist_ok=True)
             p.write_text(content)
+
+
+def plant(project, name, text):
+    """Write a file under the project, creating its folders."""
+    p = Path(project) / name
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(text)

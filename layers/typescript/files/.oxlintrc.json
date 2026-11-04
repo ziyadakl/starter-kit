@@ -1,0 +1,26 @@
+// The lint config oxlint reads: the kit's rules (.oxlint-kit.json, kit-owned), then the project's optional
+// .oxlint-project.json, which wins where both name a rule. Create the project file with `bash scripts/lint-cap.sh`.
+// Nothing here but the folder ignores: oxlint drops ignorePatterns from an extended file, so they live in this one.
+//
+// The build folders match .oxfmtrc.json's ignore list; keep the two in step. Lint alone also skips config files and
+// .jsx/.mjs/.cjs/.mts/.cts sources, as the monorepo does: they sit outside a tsconfig, so the type-aware rules misfire.
+// The lint check runs a copy of this file without the project line when .oxlint-project.json does not exist, because
+// oxlint refuses an extends entry that points at a missing file.
+{
+  "extends": [
+    "./.oxlint-kit.json",
+    "./.oxlint-project.json"
+  ],
+  "ignorePatterns": [
+    "**/node_modules/**",
+    "**/dist/**",
+    "**/build/**",
+    "**/coverage/**",
+    "**/.next/**",
+    "**/.open-next/**",
+    "**/.wrangler/**",
+    "**/.turbo/**",
+    "**/*.config.*",
+    "**/*.{jsx,mjs,cjs,mts,cts}"
+  ]
+}

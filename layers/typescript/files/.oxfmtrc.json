@@ -1,0 +1,20 @@
+// The format rules of the starter kit's typescript layer: oxfmt, which prints like Prettier's defaults
+// (double quotes, semicolons, trailing commas, 2 spaces) at 80 columns. The check formats code files only
+// (.ts .tsx .js .jsx and the .m/.c variants), not JSON, Markdown or CSS. oxfmt skips node_modules and
+// everything in .gitignore on its own.
+// A project that formats with Prettier options of its own should set the same options here by hand.
+// These build folders are also in .oxlintrc.json's ignore list; keep the two in step.
+{
+  "printWidth": 80,
+  "sortPackageJson": false,
+  "ignorePatterns": [
+    "**/node_modules/**",
+    "**/dist/**",
+    "**/build/**",
+    "**/coverage/**",
+    "**/.next/**",
+    "**/.open-next/**",
+    "**/.wrangler/**",
+    "**/.turbo/**"
+  ]
+}

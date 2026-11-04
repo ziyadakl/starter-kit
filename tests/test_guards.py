@@ -9,7 +9,7 @@ import time
 import unittest
 from pathlib import Path
 
-from tests.helpers import new_project, run_kit
+from tests.helpers import clean_env, new_project, run_kit
 
 # Tools the session-status script may use. gh is left out on purpose.
 CORE_TOOLS = (
@@ -17,10 +17,6 @@ CORE_TOOLS = (
 ).split()
 
 GREEN = [{"status": "COMPLETED", "conclusion": "SUCCESS", "name": "check"}]
-
-
-def clean_env():
-    return {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
 
 
 def git(project, *args):

@@ -1,9 +1,12 @@
 # The one CI check: runs scripts/check.sh, the same command as the local pre-push hook.
-# Pushes to main run it too, so the caches that pull requests restore stay filled.
+# Pushes to main run it too. A layer that caches saves its cache only on those runs (the python layer's setup-uv
+# does) and pull requests restore it; layers without a cache (typescript) get nothing from this.
 name: check
 
 on:
   pull_request:
+    # ready_for_review: marking a draft ready runs the check once (drafts skip it, see the check job).
+    types: [opened, synchronize, reopened, ready_for_review]
     paths-ignore:
       - '**/*.md'
       - 'docs/**'
@@ -19,6 +22,7 @@ concurrency:
 
 jobs:
   check:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:

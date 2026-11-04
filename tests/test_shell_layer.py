@@ -1,11 +1,10 @@
 """Shell layer behaviour: shellcheck runs on every script found by extension or shebang."""
 
-import os
 import shutil
 import subprocess
 import unittest
 
-from tests.helpers import new_project, run_check, run_kit
+from tests.helpers import clean_env, new_project, run_check, run_kit
 
 HAVE_SHELLCHECK = shutil.which("shellcheck") is not None
 
@@ -80,7 +79,7 @@ class TestMissingShellcheck(Applied):
             src = shutil.which(tool)
             if src:
                 (bin_dir / tool).symlink_to(src)
-        env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+        env = clean_env()
         env["PATH"] = str(bin_dir)
         c = subprocess.run(
             [str(shutil.which("bash")), "scripts/check.sh"],

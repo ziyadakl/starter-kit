@@ -7,7 +7,7 @@ import shutil
 import subprocess
 import unittest
 
-from tests.helpers import git_config, new_project, run_check, run_kit
+from tests.helpers import clean_env, git_config, new_project, run_check, run_kit
 
 HAVE_GITLEAKS = shutil.which("gitleaks") is not None
 
@@ -15,10 +15,6 @@ HAVE_GITLEAKS = shutil.which("gitleaks") is not None
 def fake_key():
     # Built at run time so no key-shaped string sits in this file.
     return "ghp_" + "aB3dE5gH7jK9mN1pQ3sT5vW7yZ0bC2eF4hJ6"
-
-
-def clean_env():
-    return {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
 
 
 class Applied(unittest.TestCase):
@@ -91,6 +87,27 @@ class TestWorkflow(Applied):
         self.assertIn("gitleaks/gitleaks-action", gl)
         self.assertNotIn("gitleaks-action", self.text)
 
+    def test_pull_request_trigger_includes_ready_for_review(self):
+        m = re.search(r"(?m)^  pull_request:\n(?:    .*\n)+", self.text)
+        assert m is not None
+        self.assertRegex(
+            m.group(0),
+            r"types: \[opened, synchronize, reopened, ready_for_review\]",
+        )
+
+    def test_check_job_skips_draft_pull_requests_but_not_pushes(self):
+        block = self.jobs()["check"]
+        self.assertIn(
+            "if: github.event_name != 'pull_request' || github.event.pull_request.draft == false",
+            block,
+        )
+
+    def test_gitleaks_scan_still_runs_on_drafts(self):
+        gl = self.path(".github/workflows/gitleaks.yml").read_text()
+        self.assertNotIn("draft", gl)
+        # No `if:` on any job (4 spaces) or on the workflow's jobs section that could skip a draft or anything else.
+        self.assertNotRegex(gl, r"(?m)^    if:")
+
     def test_no_tab_characters(self):
         self.assertNotIn("\t", self.text)
 
@@ -145,6 +162,52 @@ class TestGitleaksCheck(Applied):
         )
         self.assertEqual(c.returncode, 0, c.stdout + c.stderr)
         self.assertRegex(c.stdout, r"(?i)gitleaks not installed")
+
+
+class TestPrePushInWorktree(Applied):
+    """The pre-push hook finds the check in a linked worktree, not in the main checkout."""
+
+    def git(self, *args, cwd=None):
+        return subprocess.run(
+            ["git", "-c", "user.name=t", "-c", "user.email=t@example.com", *args],
+            cwd=cwd or self.project,
+            capture_output=True,
+            text=True,
+            env=clean_env(),
+            check=False,
+        )
+
+    def setUp(self):
+        super().setUp()
+        d = self.path("scripts/check.d")
+        (d / "50-marker.sh").write_text(
+            "#!/usr/bin/env bash\n"
+            'if [ -f "$PWD/FAIL" ]; then echo planted failure; exit 1; fi\n'
+            'touch "$PWD/ran-here"\n'
+        )
+        self.git("add", "-A")
+        self.git("commit", "-q", "-m", "init")
+        self.git("branch", "-M", "main")
+        self.remote = self.project.parent / (self.project.name + "-remote.git")
+        self.addCleanup(shutil.rmtree, self.remote, True)
+        subprocess.run(["git", "init", "-q", "--bare", str(self.remote)], check=True)
+        self.git("remote", "add", "origin", str(self.remote))
+        self.wt = self.project.parent / (self.project.name + "-wt")
+        self.addCleanup(shutil.rmtree, self.wt, True)
+        r = self.git("worktree", "add", "-q", "-b", "feature", str(self.wt))
+        self.assertEqual(r.returncode, 0, r.stderr)
+
+    def test_push_from_a_worktree_runs_the_check_in_that_worktree(self):
+        r = self.git("push", "-q", "origin", "feature", cwd=self.wt)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertTrue((self.wt / "ran-here").exists())
+        self.assertFalse((self.project / "ran-here").exists())
+
+    def test_failing_check_blocks_a_push_from_a_worktree(self):
+        (self.wt / "FAIL").write_text("x\n")
+        r = self.git("push", "-q", "origin", "feature", cwd=self.wt)
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("planted failure", r.stdout + r.stderr)
 
 
 class TestRenovate(Applied):
