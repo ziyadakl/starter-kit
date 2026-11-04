@@ -267,12 +267,18 @@ class TestApply(TypeScriptProject):
         ]
         self.assertTrue(any("**/*.test.*" in f for f in off))
 
-    def test_lint_and_format_share_one_ignore_list(self):
+    def test_lint_and_format_share_the_build_folder_ignores(self):
         lint = self.config(".oxlintrc.json")["ignorePatterns"]
         fmt = self.config(".oxfmtrc.json")["ignorePatterns"]
-        self.assertEqual(lint, fmt)
+        self.assertTrue(set(fmt) <= set(lint))
         for name in (".wrangler", ".open-next", ".turbo", ".next", "node_modules"):
-            self.assertTrue(any(name in pat for pat in lint), name)
+            self.assertTrue(any(name in pat for pat in fmt), name)
+
+    def test_lint_skips_what_the_monorepo_skips(self):
+        # Config files and non-.ts/.tsx sources sit outside a tsconfig, so the type-aware rules misfire on them.
+        lint = self.config(".oxlintrc.json")["ignorePatterns"]
+        self.assertIn("**/*.config.*", lint)
+        self.assertIn("**/*.{jsx,mjs,cjs,mts,cts}", lint)
 
     def test_never_overwritten_comment_matches_apply(self):
         text = (self.project / ".oxlintrc.json").read_text()

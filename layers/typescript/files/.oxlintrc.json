@@ -9,7 +9,8 @@
 // Change a rule by editing this file by hand (Claude's config guard refuses to). `kit.py apply` stops instead of
 // replacing a .oxlintrc.json that already differs (`--force` overwrites it).
 //
-// This file is the same ignore list as .oxfmtrc.json; keep the two in step.
+// The build folders match .oxfmtrc.json's ignore list; keep the two in step. Lint alone also skips config files and
+// .jsx/.mjs/.cjs/.mts/.cts sources, as the monorepo does: they sit outside a tsconfig, so the type-aware rules misfire.
 {
   "plugins": ["typescript", "import"],
   "categories": { "correctness": "off" },
@@ -23,7 +24,9 @@
     "**/.next/**",
     "**/.open-next/**",
     "**/.wrangler/**",
-    "**/.turbo/**"
+    "**/.turbo/**",
+    "**/*.config.*",
+    "**/*.{jsx,mjs,cjs,mts,cts}"
   ],
   "rules": {
     "typescript/adjacent-overload-signatures": "error",
