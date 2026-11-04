@@ -167,6 +167,7 @@ class TestApply(TypeScriptProject):
             "scripts/check.d/20-ts-typecheck.sh",
             "scripts/check.d/21-ts-lint.sh",
             "scripts/check.d/22-ts-format.sh",
+            "scripts/check.d/23-ts-cap-raise.sh",
             "scripts/check.d/30-ts-tests.sh",
             "scripts/ts-common.sh",
             "scripts/ts-pm.sh",
@@ -806,6 +807,46 @@ class TestReadme(unittest.TestCase):
         self.assertIn("tsc -b", self.text)
 
 
+class TestLintAdoptionDocs(unittest.TestCase):
+    def setUp(self):
+        self.text = (KIT_ROOT / "README.md").read_text()
+        self.changelog = (KIT_ROOT / "CHANGELOG.md").read_text()
+
+    def test_readme_explains_the_rule_groups_the_cap_and_the_lower_cap_command(self):
+        for needle in (
+            "no-floating-promises",
+            "no-misused-promises",
+            "await-thenable",
+            "no-debugger",
+            "no-non-null-assertion",
+            PROJECT_FILE,
+            "maxWarnings",
+            LOWER_CAP_COMMAND,
+            "23-ts-cap-raise.sh",
+            "base branch",
+        ):
+            self.assertIn(needle, self.text)
+
+    def test_readme_gives_the_adoption_recipe_in_order(self):
+        recipe = self.text[self.text.index("Adopting the kit in an existing project") :]
+        positions = [
+            recipe.index(w)
+            for w in (
+                "Apply the kit",
+                "mechanical",
+                LOWER_CAP_COMMAND,
+                "remaining error",
+            )
+        ]
+        self.assertEqual(positions, sorted(positions))
+        self.assertIn("void", recipe)
+
+    def test_changelog_names_the_cap_check_under_0_3_0(self):
+        section = self.changelog.split("## 0.2.0")[0]
+        self.assertIn("23-ts-cap-raise.sh", section)
+        self.assertIn(PROJECT_FILE, section)
+
+
 @unittest.skipUnless(shutil.which("npx") and shutil.which("node"), "needs node and npx")
 class TestRealTools(TypeScriptProject):
     """The kit's pinned tools, fetched by npx, on a real project: no fakes, no edit to package.json."""
@@ -1150,6 +1191,98 @@ class TestLowerCap(TypeScriptProject):
         self.assertFalse((self.project / PROJECT_FILE).exists())
         self.assertIn("typescript/no-floating-promises", out)
         self.assertIn("no-debugger", out)
+
+
+class TestCapRaiseCheck(TypeScriptProject):
+    """CI on a pull request fails when the project file's cap is higher than on the base branch."""
+
+    STEP = "scripts/check.d/23-ts-cap-raise.sh"
+
+    def git(self, *args):
+        r = subprocess.run(
+            ["git", "-c", "user.name=t", "-c", "user.email=t@example.com", *args],
+            capture_output=True,
+            text=True,
+            cwd=self.project,
+            env=clean_env(),
+            check=False,
+        )
+        self.assertEqual(r.returncode, 0, r.stderr)
+
+    def set_cap(self, cap):
+        (self.project / PROJECT_FILE).write_text(
+            json.dumps({"options": {"maxWarnings": cap}})
+        )
+
+    def land_on_base(self):
+        """Commit the project as the base branch and push it to a local bare 'origin'."""
+        remote = self.project.parent / (self.project.name + "-origin.git")
+        subprocess.run(
+            ["git", "init", "-q", "--bare", str(remote)], check=True, env=clean_env()
+        )
+        self.addCleanup(shutil.rmtree, remote, True)
+        self.git("add", "-A")
+        self.git("commit", "-qm", "base")
+        self.git("branch", "-M", "main")
+        self.git("remote", "add", "origin", str(remote))
+        self.git("push", "-q", "origin", "main")
+
+    def in_pull_request(self, base="main"):
+        r = run_script(self.project, "bash", self.STEP, env={"GITHUB_BASE_REF": base})
+        return r, r.stdout + r.stderr
+
+    def test_outside_a_pull_request_it_skips_cleanly(self):
+        self.set_cap(5)
+        r = run_script(self.project, "bash", self.STEP)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("skip", (r.stdout + r.stderr).lower())
+
+    def test_a_project_file_new_in_the_pull_request_passes(self):
+        self.land_on_base()
+        self.set_cap(40)
+        r, out = self.in_pull_request()
+        self.assertEqual(r.returncode, 0, out)
+
+    def test_a_raised_cap_fails_naming_both_caps(self):
+        self.set_cap(10)
+        self.land_on_base()
+        self.set_cap(11)
+        r, out = self.in_pull_request()
+        self.assertNotEqual(r.returncode, 0, out)
+        self.assertIn("11", out)
+        self.assertIn("10", out)
+        self.assertIn("maxWarnings", out)
+
+    def test_an_equal_or_lower_cap_passes(self):
+        self.set_cap(10)
+        self.land_on_base()
+        for cap in (10, 3):
+            self.set_cap(cap)
+            r, out = self.in_pull_request()
+            self.assertEqual(r.returncode, 0, out)
+
+    def test_deleting_the_project_file_or_its_cap_fails(self):
+        self.set_cap(10)
+        self.land_on_base()
+        (self.project / PROJECT_FILE).write_text("{}\n")
+        r, out = self.in_pull_request()
+        self.assertNotEqual(r.returncode, 0, out)
+        (self.project / PROJECT_FILE).unlink()
+        r, out = self.in_pull_request()
+        self.assertNotEqual(r.returncode, 0, out)
+
+    def test_a_base_branch_that_cannot_be_fetched_fails(self):
+        self.land_on_base()
+        self.set_cap(5)
+        r, out = self.in_pull_request(base="no-such-branch")
+        self.assertNotEqual(r.returncode, 0, out)
+        self.assertIn("no-such-branch", out)
+
+    def test_check_sh_runs_it_and_still_passes_outside_a_pull_request(self):
+        c, out = self.check()
+        self.assertEqual(c.returncode, 0, out)
+        self.assertIn("-- cap raise", out)
+        self.assertIn("CHECK PASSED", c.stdout)
 
 
 class TestKitUpdate(TypeScriptProject):
