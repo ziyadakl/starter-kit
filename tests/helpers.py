@@ -29,8 +29,15 @@ def new_project():
 
 
 def clean_env():
-    """The caller's environment without GIT_* variables, so a test's git commands act on the test's own repo."""
-    return {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+    """The caller's environment without GIT_* variables, so a test's git commands act on the test's own repo, and
+    without the pull-request refs GitHub Actions sets, so the kit's own CI does not turn a test project into a pull
+    request (a test that wants one passes GITHUB_BASE_REF itself)."""
+    drop = {"GITHUB_BASE_REF", "GITHUB_HEAD_REF"}
+    return {
+        k: v
+        for k, v in os.environ.items()
+        if not k.startswith("GIT_") and k not in drop
+    }
 
 
 def run_check(project):
