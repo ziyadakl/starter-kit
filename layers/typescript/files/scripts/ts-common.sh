@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Shared by the typescript layer's scripts/check.d/*-ts-*.sh steps: source it, do not run it.
+# Shared by the typescript layer's scripts/check.d/*-ts-*.sh steps and by scripts/lint-cap.sh: source it, do not run it.
 # It holds the pinned tool versions (the one place to bump them; Renovate reads the comments above each pin), the checks
 # every step starts with (a package.json, a lockfile, installed dependencies), and the helpers the steps share.
 #
@@ -19,16 +19,19 @@ OXLINT_TSGOLINT_VERSION=7.0.2005
 OXFMT_VERSION=0.75.0
 FORMAT_GLOB='**/*.{js,jsx,mjs,cjs,ts,tsx,mts,cts}'
 
-# The lint files and rule groups (see .oxlint-kit.json). The lower-cap command and the CI cap check read these too.
-# Locked rules are always errors. Lowerable rules (a trailing * is a prefix) may be set to warn or off in the project
-# file; no-var may also be turned off there, in an override for untyped browser files. Every other rule stays an error.
+# The lint files and rule groups (see .oxlint-kit.json). The lint step, the lower-cap command and the CI cap check apply
+# them through scripts/lint-policy.mjs, which reads these variables: this is the one copy of the policy's data.
+# Locked rules are always errors. Lowerable rules (a trailing * is a prefix) may be set to warn in the project file, never
+# to off. Override-off rules may be turned off, and only in an override for files the tsconfig does not check (untyped
+# browser scripts); the lower-cap command writes that override. Every other rule stays an error.
 LINT_KIT_FILE=.oxlint-kit.json
 LINT_PROJECT_FILE=.oxlint-project.json
 LINT_CAP_KEY=maxWarnings
 LINT_CAP_COMMAND="bash scripts/lint-cap.sh"
 LINT_LOCKED_RULES="typescript/no-floating-promises typescript/no-misused-promises typescript/await-thenable no-debugger"
 LINT_LOWERABLE_RULES="typescript/no-unsafe-* typescript/no-non-null-assertion typescript/prefer-nullish-coalescing typescript/prefer-optional-chain typescript/require-await"
-export LINT_KIT_FILE LINT_PROJECT_FILE LINT_CAP_KEY LINT_CAP_COMMAND LINT_LOCKED_RULES LINT_LOWERABLE_RULES
+LINT_OVERRIDE_OFF_RULES="typescript/no-unsafe-* no-var"
+export LINT_KIT_FILE LINT_PROJECT_FILE LINT_CAP_KEY LINT_CAP_COMMAND LINT_LOCKED_RULES LINT_LOWERABLE_RULES LINT_OVERRIDE_OFF_RULES
 export TYPESCRIPT_VERSION OXLINT_VERSION OXLINT_TSGOLINT_VERSION OXFMT_VERSION FORMAT_GLOB
 
 # shellcheck source=/dev/null
@@ -68,9 +71,31 @@ tool() {
   fi
 }
 
-# A scratch folder for a canary: a file with a known mistake and a tsconfig that reaches it. Removed on exit.
+# lint_policy <command> [args]: the shared lint-file policy (see scripts/lint-policy.mjs).
+lint_policy() { node "$(dirname "${BASH_SOURCE[0]}")/lint-policy.mjs" "$@"; }
+
+# ts_files: the files the tsconfig reaches (its references too), absolute or relative, one per line.
+ts_files() {
+  local ts=(tool tsc "typescript@$TYPESCRIPT_VERSION" --) ref cfg
+  cfg=$(mktemp)
+  track_scratch "$cfg"
+  "${ts[@]}" --noEmit --listFilesOnly || return 1
+  "${ts[@]}" --showConfig >"$cfg" 2>/dev/null || return 0
+  for ref in $(lint_policy refs "$cfg" 2>/dev/null); do
+    "${ts[@]}" --noEmit --listFilesOnly -p "$ref" || return 1
+  done
+}
+
+# A scratch folder for a canary: a file with a known mistake and a tsconfig that reaches it. Removed on exit, with every
+# file passed to track_scratch.
 canary_dir=""
-cleanup() { [ -n "$canary_dir" ] && rm -rf "$canary_dir"; }
+scratch_files=()
+track_scratch() { scratch_files+=("$@"); }
+cleanup() {
+  [ -n "$canary_dir" ] && rm -rf "$canary_dir"
+  [ "${#scratch_files[@]}" -gt 0 ] && rm -f "${scratch_files[@]}"
+  return 0
+}
 trap cleanup EXIT
 
 new_canary_dir() {

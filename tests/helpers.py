@@ -62,3 +62,10 @@ def make_layers(root, spec):
             p = Path(root) / layer / rel
             p.parent.mkdir(parents=True, exist_ok=True)
             p.write_text(content)
+
+
+def plant(project, name, text):
+    """Write a file under the project, creating its folders."""
+    p = Path(project) / name
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(text)

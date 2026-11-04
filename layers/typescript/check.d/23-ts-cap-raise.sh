@@ -30,17 +30,10 @@ if ! git show "FETCH_HEAD:$LINT_PROJECT_FILE" >"$base_file" 2>/dev/null; then
   exit 0
 fi
 
-# Prints the cap of a project file: a number, or "none".
-read_cap() {
-  node -e '
-    let o = {};
-    try { o = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")); } catch (e) { process.exit(2); }
-    const c = o.options && o.options[process.env.LINT_CAP_KEY];
-    console.log(Number.isInteger(c) ? c : "none");
-  ' "$1"
-}
+# Prints the cap of a project file: a number, or "none". The file may carry comments (lint-cap.sh writes a header).
+read_cap() { lint_policy cap "$1"; }
 
-base_cap=$(read_cap "$base_file") || { echo "cap raise: $LINT_PROJECT_FILE on '$base' is not readable JSON" >&2; exit 1; }
+base_cap=$(read_cap "$base_file") || { echo "cap raise: $LINT_PROJECT_FILE on '$base' cannot be read (see above)" >&2; exit 1; }
 if [ "$base_cap" = none ]; then
   echo "cap raise: '$base' sets no $LINT_CAP_KEY: nothing to compare with, ok"
   exit 0
@@ -48,7 +41,7 @@ fi
 
 head_cap=none
 if [ -f "$LINT_PROJECT_FILE" ]; then
-  head_cap=$(read_cap "$LINT_PROJECT_FILE") || { echo "cap raise: $LINT_PROJECT_FILE is not readable JSON" >&2; exit 1; }
+  head_cap=$(read_cap "$LINT_PROJECT_FILE") || { echo "cap raise: $LINT_PROJECT_FILE cannot be read (see above)" >&2; exit 1; }
 fi
 if [ "$head_cap" = none ] || [ "$head_cap" -gt "$base_cap" ]; then
   echo "cap raise: $LINT_CAP_KEY in $LINT_PROJECT_FILE is ${head_cap/none/missing} here but $base_cap on '$base': the cap only goes down. Only the owner raises it (by merging this pull request by hand)" >&2

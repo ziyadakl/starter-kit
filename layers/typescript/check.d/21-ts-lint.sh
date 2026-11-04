@@ -2,8 +2,9 @@
 # Lint with oxlint, type-aware (needs oxlint-tsgolint next to it), under .oxlintrc.json: the kit's rules
 # (.oxlint-kit.json) then the project's optional .oxlint-project.json.
 #
-# Policy: the merged config must keep the locked rules as errors and may lower only the allowed rules (see ts-common.sh);
-# the project file's options.maxWarnings caps the warnings: over the cap fails, under it prints the lower-cap command.
+# Policy (scripts/lint-policy.mjs, data in ts-common.sh): the merged config must keep the locked rules as errors and may lower
+# only the allowed rules, to warn; a project file that lowers anything must set options.maxWarnings, which caps the warnings:
+# over the cap fails, under it prints the lower-cap command.
 #
 # Canary: oxlint first runs on a planted floating promise (type-aware) and a debugger statement and must report both
 # as errors under the merged config, so a rule switched off, a rule left at warning, or type information not
@@ -23,8 +24,11 @@ if [ -f .oxlintrc.json ]; then
   config_file=.oxlintrc.json
   if [ ! -f "$LINT_PROJECT_FILE" ]; then
     # oxlint refuses an extends entry that points at a missing file: lint under a copy of the root config without it.
-    config_file="$canary_dir/oxlintrc.json"
-    sed -E "s#^( *)\"\\./$LINT_PROJECT_FILE\"#\\1\"./$LINT_KIT_FILE\"#; s#\"\\./#\"$PWD/#" .oxlintrc.json >"$config_file"
+    # The copy sits in the repo root and is named by a relative path, because oxlint matches ignorePatterns (and override
+    # globs) against the folder of the config it was given: a copy elsewhere would lint dist/ and the config files.
+    config_file=".oxlintrc.check-$$.json"
+    track_scratch "$config_file"
+    lint_policy root-config "$config_file" || exit 1
   fi
   config=(-c "$config_file")
 
@@ -34,53 +38,18 @@ if [ -f .oxlintrc.json ]; then
     echo "lint: could not read the merged oxlint config" >&2
     exit 1
   fi
+  # An override that turns rules off is only allowed for files outside the tsconfig, so list the tsconfig's files then.
+  policy_args=()
+  if [ -f "$LINT_PROJECT_FILE" ] && grep -q '"overrides"' "$LINT_PROJECT_FILE"; then
+    if ! ts_files >"$canary_dir/tsfiles.txt" 2>"$canary_dir/ts.err"; then
+      cat "$canary_dir/ts.err"
+      echo "lint: tsc could not list the files the tsconfig reaches" >&2
+      exit 1
+    fi
+    policy_args=(--ts-files "$canary_dir/tsfiles.txt")
+  fi
   # Prints the cap (nothing when there is none); violations go to stderr, one line each, with exit status 1.
-  cap=$(node - "$canary_dir/kit.json" "$canary_dir/merged.json" <<'JS'
-const fs = require("fs");
-const [kitPath, mergedPath] = process.argv.slice(2);
-const kit = JSON.parse(fs.readFileSync(kitPath, "utf8"));
-const merged = JSON.parse(fs.readFileSync(mergedPath, "utf8"));
-const words = (v) => (process.env[v] || "").split(/\s+/).filter(Boolean);
-const locked = words("LINT_LOCKED_RULES");
-const lowerable = words("LINT_LOWERABLE_RULES");
-const norm = (n) => n.replace(/^@typescript-eslint\//, "typescript/");
-const level = (v) => {
-  const w = String(Array.isArray(v) ? v[0] : v).toLowerCase();
-  return ["deny", "error", "2"].includes(w) ? 2 : ["warn", "warning", "1"].includes(w) ? 1 : 0;
-};
-const name = (l) => (l === 2 ? "error" : l === 1 ? "warn" : "off");
-const isLowerable = (n) => lowerable.some((p) => (p.endsWith("*") ? n.startsWith(p.slice(0, -1)) : n === p));
-const rules = (o) => Object.fromEntries(Object.entries((o && o.rules) || {}).map(([k, v]) => [norm(k), v]));
-const kitRules = rules(kit);
-const mergedRules = rules(merged);
-const key = (o) => JSON.stringify(o.files);
-const bad = [];
-const lockedHit = (n, l, where) =>
-  bad.push(`lint: locked rule ${n} is ${name(l)}${where}, not error: a project cannot lower it (${process.env.LINT_PROJECT_FILE})`);
-for (const n of locked) if (level(mergedRules[n]) !== 2) lockedHit(n, level(mergedRules[n]), "");
-for (const [n, v] of Object.entries(mergedRules)) {
-  if (kitRules[n] !== undefined && level(v) < level(kitRules[n]) && !locked.includes(n) && !isLowerable(n))
-    bad.push(`lint: rule ${n} is lowered to ${name(level(v))}, but only the allowed rules may be (${process.env.LINT_PROJECT_FILE})`);
-}
-for (const o of merged.overrides || []) {
-  const base = ((kit.overrides || []).find((k) => key(k) === key(o)) || {}).rules || {};
-  const baseRules = Object.fromEntries(Object.entries(base).map(([k, v]) => [norm(k), v]));
-  for (const [n, v] of Object.entries(rules(o))) {
-    if (locked.includes(n)) {
-      if (level(v) !== 2) lockedHit(n, level(v), ` for ${key(o)}`);
-      continue;
-    }
-    const ref = baseRules[n] !== undefined ? baseRules[n] : kitRules[n];
-    if (ref !== undefined && level(v) < level(ref) && !isLowerable(n) && n !== "no-var")
-      bad.push(`lint: rule ${n} is lowered to ${name(level(v))} for ${key(o)}, but only the allowed rules may be (${process.env.LINT_PROJECT_FILE})`);
-  }
-}
-bad.forEach((m) => console.error(m));
-if (bad.length) process.exit(1);
-const cap = merged.options && merged.options[process.env.LINT_CAP_KEY];
-if (Number.isInteger(cap)) console.log(cap);
-JS
-  ) || exit 1
+  cap=$(lint_policy check "$canary_dir/kit.json" "$canary_dir/merged.json" ${policy_args[@]+"${policy_args[@]}"}) || exit 1
 fi
 
 printf 'async function f() {\n  return 1;\n}\nf();\ndebugger;\n' >"$canary_dir/canary.ts"

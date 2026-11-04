@@ -5,7 +5,7 @@
 // The build folders match .oxfmtrc.json's ignore list; keep the two in step. Lint alone also skips config files and
 // .jsx/.mjs/.cjs/.mts/.cts sources, as the monorepo does: they sit outside a tsconfig, so the type-aware rules misfire.
 // The lint check runs a copy of this file without the project line when .oxlint-project.json does not exist, because
-// oxlint refuses an extends entry that points at a missing file. Keep each extends entry on its own line.
+// oxlint refuses an extends entry that points at a missing file.
 {
   "extends": [
     "./.oxlint-kit.json",
