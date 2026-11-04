@@ -1069,8 +1069,19 @@ class TestLowerCap(TypeScriptProject):
         self.assertIn("was 9", out)
 
     def test_it_refuses_to_raise_an_existing_cap(self):
-        self.plant("src/n.ts", NON_NULL + NON_NULL.replace("const m", "const m2").replace("m.get", "m2.get").replace("v:", "v2:"))
-        self.write_cfg({"rules": {"typescript/no-non-null-assertion": "warn"}, "options": {CAP_KEY: 1}})
+        self.plant(
+            "src/n.ts",
+            NON_NULL
+            + NON_NULL.replace("const m", "const m2")
+            .replace("m.get", "m2.get")
+            .replace("v:", "v2:"),
+        )
+        self.write_cfg(
+            {
+                "rules": {"typescript/no-non-null-assertion": "warn"},
+                "options": {CAP_KEY: 1},
+            }
+        )
         before = (self.project / PROJECT_FILE).read_text()
         c, out = self.lint_cap()
         self.assertNotEqual(c.returncode, 0, out)
@@ -1085,8 +1096,13 @@ class TestLowerCap(TypeScriptProject):
         self.assertEqual(self.project_cfg(), {"options": {CAP_KEY: 0}})
 
     def test_files_outside_the_tsconfig_skip_unsafe_rules_but_keep_promise_rules(self):
-        self.plant("public/b.js", PROMISE_BUG + "var x = JSON.parse('1');\nexport const y = x.foo;\n")
-        self.plant("public/sub/c.js", "var z = JSON.parse('1');\nexport const w = z.bar;\n")  # nested: one glob covers both
+        self.plant(
+            "public/b.js",
+            PROMISE_BUG + "var x = JSON.parse('1');\nexport const y = x.foo;\n",
+        )
+        self.plant(
+            "public/sub/c.js", "var z = JSON.parse('1');\nexport const w = z.bar;\n"
+        )  # nested: one glob covers both
         self.plant("src/n.ts", UNSAFE.replace("'1'", '"1"'))
         c, out = self.lint_cap()
         self.assertEqual(c.returncode, 0, out)
@@ -1094,7 +1110,10 @@ class TestLowerCap(TypeScriptProject):
         # The typed file's unsafe-assignment and the browser file's require-await (not in the skipped family) warn.
         self.assertEqual(
             cfg["rules"],
-            {"typescript/no-unsafe-assignment": "warn", "typescript/require-await": "warn"},
+            {
+                "typescript/no-unsafe-assignment": "warn",
+                "typescript/require-await": "warn",
+            },
         )
         self.assertEqual(cfg["options"][CAP_KEY], 2)
         override = cfg["overrides"][0]
@@ -1104,7 +1123,10 @@ class TestLowerCap(TypeScriptProject):
         self.assertNotIn("typescript/no-floating-promises", override["rules"])
         c, out = self.check()
         self.assertNotEqual(c.returncode, 0, out)
-        self.assertRegex(out, r"public/b\.js.*no-floating-promises|no-floating-promises[\s\S]*public/b\.js")
+        self.assertRegex(
+            out,
+            r"public/b\.js.*no-floating-promises|no-floating-promises[\s\S]*public/b\.js",
+        )
         self.assertNotIn("no-unsafe-member-access", out)
         self.assertNotIn("no-var", out)
         self.assertNotIn("locked rule", out)
@@ -1117,7 +1139,9 @@ class TestLowerCap(TypeScriptProject):
         self.plant("public/b.js", "var x = JSON.parse('1');\nexport const y = x.foo;\n")
         c = run_script(link, "bash", "scripts/lint-cap.sh", env={"PWD": str(link)})
         self.assertEqual(c.returncode, 0, c.stdout + c.stderr)
-        self.assertNotIn("typescript/no-unsafe-member-access", self.project_cfg().get("rules", {}))
+        self.assertNotIn(
+            "typescript/no-unsafe-member-access", self.project_cfg().get("rules", {})
+        )
 
     def test_locked_rule_findings_stay_errors_and_are_never_lowered(self):
         self.plant("src/p.ts", "Promise.resolve(1);\ndebugger;\n")
