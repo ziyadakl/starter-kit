@@ -207,6 +207,10 @@ class TestLintPolicy(unittest.TestCase):
             "{lib,src}/**/*.ts",
             "sr[c]/**",
             "[s]rc/sub/b.ts",
+            "sr[]c]/**",  # a class that opens with "]" holds "]", as oxlint reads it
+            "s[!x]c/**",
+            "*.ts",  # a glob with no slash matches at any depth, as in oxlint
+            "b.ts",
         ):
             self.refused(
                 self.merged(overrides=[{"files": [glob], "rules": rules}], cap=3),

@@ -141,12 +141,14 @@ export function globToRegExp(glob) {
         re += ".*";
         i += 1;
       }
-    } else if (c === "[" && g.indexOf("]", i + 2) !== -1) {
-      // A character class, read the way oxlint's glob matcher reads it ("[!x]" negates).
-      const end = g.indexOf("]", i + 2);
+    } else if (c === "[" && classEnd(g, i) !== -1) {
+      // A character class, read the way oxlint's glob matcher reads it: "[!x]" negates, and a "]" right after the
+      // opening "[" (or "[!") is a member, not the end.
+      const end = classEnd(g, i);
       let body = g.slice(i + 1, end);
-      if (body.startsWith("!")) body = `^${body.slice(1)}`;
-      re += `[${body.replace(/\\/g, "\\\\")}]`;
+      const neg = body.startsWith("!");
+      if (neg) body = body.slice(1);
+      re += `[${neg ? "^" : ""}${body.replace(/[\\\]^]/g, "\\$&")}]`;
       i = end;
     } else if (c === "*") re += "[^/]*";
     else if (c === "?") re += "[^/]";
@@ -155,7 +157,16 @@ export function globToRegExp(glob) {
     else if (c === ",") re += "|";
     else re += c.replace(/[.+^$()|[\]\\]/g, "\\$&");
   }
-  return new RegExp(`^${re}$`);
+  // Like oxlint (and .gitignore), a glob with no slash matches a file name at any depth.
+  return new RegExp(`^${g.includes("/") ? "" : "(?:.*/)?"}${re}$`);
+}
+
+// The index of the "]" that closes the class opened at i, or -1 when it is not closed.
+function classEnd(g, i) {
+  let j = i + 1;
+  if (g[j] === "!") j++;
+  if (g[j] === "]") j++;
+  return g.indexOf("]", j);
 }
 
 // The policy check. Returns { violations, cap }. tsFiles: the files the tsconfig reaches (relative), or null.
